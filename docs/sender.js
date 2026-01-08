@@ -116,8 +116,41 @@ class VideoSender {
                 this.stopBtn.disabled = false;
             });
 
+            // 수신자가 data connection으로 연결 요청할 때
+            this.peer.on('connection', (conn) => {
+                console.log('수신자 데이터 연결:', conn.peer);
+
+                conn.on('open', () => {
+                    console.log('데이터 연결 열림');
+                });
+
+                conn.on('data', (data) => {
+                    console.log('데이터 수신:', data);
+                    if (data.type === 'request-stream') {
+                        // 수신자에게 call (스트림 전송)
+                        console.log('스트림 전송 시작:', conn.peer);
+                        const call = this.peer.call(conn.peer, this.localStream);
+
+                        if (call) {
+                            this.connections.push(call);
+                            this.updateStatus('수신자 연결됨! 스트리밍 중...', 'success');
+
+                            call.on('close', () => {
+                                this.connections = this.connections.filter(c => c !== call);
+                                if (this.connections.length === 0) {
+                                    this.updateStatus('수신자 대기 중...', 'success');
+                                }
+                            });
+
+                            this.monitorStats(call);
+                        }
+                    }
+                });
+            });
+
+            // 수신자가 직접 call할 때 (fallback)
             this.peer.on('call', (call) => {
-                console.log('수신자 연결:', call.peer);
+                console.log('수신자 call:', call.peer);
                 this.updateStatus('수신자 연결됨! 스트리밍 중...', 'success');
 
                 call.answer(this.localStream);

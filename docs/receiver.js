@@ -11,6 +11,7 @@ class VRReceiver {
         this.sphere = null;
         this.videoTexture = null;
         this.videoElement = null;
+        this.textureReady = false;
 
         // Controls
         this.isUserInteracting = false;
@@ -50,6 +51,7 @@ class VRReceiver {
         this.videoElement.playsInline = true;
         this.videoElement.muted = true;
         this.videoElement.autoplay = true;
+        this.videoElement.crossOrigin = 'anonymous';
 
         // Three.js
         this.scene = new THREE.Scene();
@@ -68,10 +70,10 @@ class VRReceiver {
         geometry.scale(-1, 1, 1);
 
         // Placeholder texture
-        const canvas = document.createElement('canvas');
-        canvas.width = 512;
-        canvas.height = 256;
-        const ctx = canvas.getContext('2d');
+        const placeholderCanvas = document.createElement('canvas');
+        placeholderCanvas.width = 512;
+        placeholderCanvas.height = 256;
+        const ctx = placeholderCanvas.getContext('2d');
         const gradient = ctx.createLinearGradient(0, 0, 512, 256);
         gradient.addColorStop(0, '#1a1a2e');
         gradient.addColorStop(1, '#16213e');
@@ -83,7 +85,7 @@ class VRReceiver {
         ctx.fillText('영상 대기 중...', 256, 128);
 
         const material = new THREE.MeshBasicMaterial({
-            map: new THREE.CanvasTexture(canvas),
+            map: new THREE.CanvasTexture(placeholderCanvas),
             side: THREE.BackSide
         });
         this.sphere = new THREE.Mesh(geometry, material);
@@ -185,19 +187,51 @@ class VRReceiver {
 
         this.updateStatus('PeerJS 연결 중...', 'info');
 
-        // Random receiver ID
-        const myId = `receiver-${roomId}-${Math.random().toString(36).substring(2, 6)}`;
-        this.peer = new Peer(myId, { debug: 2 });
+        // Receiver용 고유 ID
+        const myId = `receiver-${roomId}-${Date.now()}`;
+        this.peer = new Peer(myId, { debug: 1 });
 
         this.peer.on('open', () => {
-            this.updateStatus('송신자에 연결 중...', 'info');
+            this.updateStatus('송신자 연결 시도 중...', 'info');
 
             const senderId = `sender-${roomId}`;
-            this.call = this.peer.call(senderId, null, { metadata: { type: 'receiver' } });
 
-            // Actually we need to receive, not send. Let's fix:
-            // PeerJS: caller sends stream, callee receives. So receiver should call sender.
-            // But we don't have a stream to send. We'll create a dummy or just request.
+            // DataConnection으로 먼저 연결 확인
+            const conn = this.peer.connect(senderId);
+
+            conn.on('open', () => {
+                console.log('데이터 연결 성공, 스트림 요청');
+                conn.send({ type: 'request-stream' });
+            });
+
+            conn.on('error', (err) => {
+                console.error('데이터 연결 오류:', err);
+            });
+        });
+
+        // 송신자가 call 해올 때 받기
+        this.peer.on('call', (call) => {
+            console.log('송신자로부터 call 수신');
+            this.updateStatus('스트림 수신 중...', 'info');
+
+            // 스트림 없이 answer
+            call.answer();
+
+            call.on('stream', (stream) => {
+                console.log('스트림 수신!', stream.getTracks());
+                this.handleStream(stream);
+            });
+
+            call.on('close', () => {
+                this.updateStatus('송신자 연결 끊김', 'error');
+            });
+
+            call.on('error', (err) => {
+                console.error('Call 오류:', err);
+                this.updateStatus(`오류: ${err}`, 'error');
+            });
+
+            this.call = call;
         });
 
         this.peer.on('error', (err) => {
@@ -208,50 +242,32 @@ class VRReceiver {
                 this.updateStatus(`오류: ${err.message}`, 'error');
             }
         });
+    }
 
-        // Alternative: Use connection to request stream
-        this.peer.on('open', () => {
-            const senderId = `sender-${roomId}`;
+    handleStream(stream) {
+        this.remoteStream = stream;
+        this.videoElement.srcObject = stream;
+        this.debugVideo.srcObject = stream;
 
-            // Create a silent audio track as dummy
-            const ctx = new AudioContext();
-            const oscillator = ctx.createOscillator();
-            const dst = oscillator.connect(ctx.createMediaStreamDestination());
-            const dummyStream = ctx.createMediaStreamDestination().stream;
+        // 비디오 준비 대기
+        this.videoElement.onloadedmetadata = () => {
+            console.log('메타데이터 로드:', this.videoElement.videoWidth, 'x', this.videoElement.videoHeight);
+        };
 
-            this.call = this.peer.call(senderId, dummyStream);
-
-            if (!this.call) {
-                this.updateStatus('송신자를 찾을 수 없습니다', 'error');
-                return;
-            }
-
-            this.call.on('stream', (stream) => {
-                console.log('스트림 수신!', stream);
-                this.remoteStream = stream;
-                this.videoElement.srcObject = stream;
-                this.debugVideo.srcObject = stream;
-
-                this.videoElement.onloadedmetadata = () => {
-                    this.videoElement.play().then(() => {
-                        this.updateVideoTexture();
-                        this.updateStatus('스트리밍 수신 중!', 'success');
-                    }).catch(() => {
-                        this.updateStatus('화면을 클릭하여 재생', 'warning');
-                    });
-                };
-
-                this.monitorStats();
+        this.videoElement.oncanplay = () => {
+            console.log('재생 가능');
+            this.videoElement.play().then(() => {
+                console.log('재생 시작');
+                this.updateStatus('스트리밍 수신 중!', 'success');
+                // 약간의 딜레이 후 텍스처 생성
+                setTimeout(() => this.updateVideoTexture(), 100);
+            }).catch((e) => {
+                console.error('재생 실패:', e);
+                this.updateStatus('화면을 클릭하여 재생', 'warning');
             });
+        };
 
-            this.call.on('close', () => {
-                this.updateStatus('송신자 연결 끊김', 'error');
-            });
-
-            this.call.on('error', (err) => {
-                this.updateStatus(`통화 오류: ${err}`, 'error');
-            });
-        });
+        this.monitorStats();
     }
 
     monitorStats() {
@@ -283,21 +299,36 @@ class VRReceiver {
     }
 
     updateVideoTexture() {
-        if (!this.videoElement || this.videoElement.readyState < 2) {
-            setTimeout(() => this.updateVideoTexture(), 500);
+        // 비디오가 실제로 재생 중이고 크기가 있는지 확인
+        if (!this.videoElement ||
+            this.videoElement.readyState < 3 ||
+            this.videoElement.videoWidth === 0 ||
+            this.videoElement.videoHeight === 0) {
+            console.log('비디오 아직 준비 안됨, 재시도...');
+            setTimeout(() => this.updateVideoTexture(), 300);
             return;
         }
+
+        console.log('텍스처 생성:', this.videoElement.videoWidth, 'x', this.videoElement.videoHeight);
 
         this.videoTexture = new THREE.VideoTexture(this.videoElement);
         this.videoTexture.minFilter = THREE.LinearFilter;
         this.videoTexture.magFilter = THREE.LinearFilter;
         this.videoTexture.format = THREE.RGBAFormat;
+        this.videoTexture.generateMipmaps = false;
 
-        this.sphere.material.dispose();
+        // 이전 material 정리
+        if (this.sphere.material) {
+            this.sphere.material.dispose();
+        }
+
         this.sphere.material = new THREE.MeshBasicMaterial({
             map: this.videoTexture,
             side: THREE.BackSide
         });
+
+        this.textureReady = true;
+        console.log('텍스처 적용 완료');
     }
 
     async toggleVR() {
@@ -342,7 +373,12 @@ class VRReceiver {
             );
         }
 
-        if (this.videoTexture && this.videoElement && !this.videoElement.paused) {
+        // 텍스처 업데이트 - 비디오가 실제로 재생 중일 때만
+        if (this.textureReady &&
+            this.videoTexture &&
+            this.videoElement &&
+            !this.videoElement.paused &&
+            this.videoElement.readyState >= 3) {
             this.videoTexture.needsUpdate = true;
         }
 
