@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>360 VR 스트리밍 - 송신자</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .codec-select {
+            background: #2a2a4e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .codec-select h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #888;
+        }
+        .codec-options {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .codec-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .codec-option input[type="radio"] {
+            cursor: pointer;
+        }
+        .codec-option label {
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .codec-option .supported {
+            color: #4CAF50;
+        }
+        .codec-option .unsupported {
+            color: #f44336;
+        }
+        .resolution-select {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .resolution-select select {
+            padding: 8px;
+            background: #1a1a2e;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>360 VR 스트리밍 - 송신자</h1>
+
+        <div class="controls">
+            <label for="roomId">룸 ID:</label>
+            <input type="text" id="roomId" value="default" placeholder="룸 ID 입력">
+            <button id="startBtn">스트리밍 시작</button>
+            <button id="stopBtn" disabled>스트리밍 중지</button>
+        </div>
+
+        <div class="codec-select">
+            <h3>코덱 선택 (우선순위)</h3>
+            <div class="codec-options" id="codecOptions">
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecH265" value="H265">
+                    <label for="codecH265">H.265/HEVC <span id="h265Status"></span></label>
+                </div>
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecVP9" value="VP9" checked>
+                    <label for="codecVP9">VP9 <span id="vp9Status"></span></label>
+                </div>
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecH264" value="H264">
+                    <label for="codecH264">H.264 <span id="h264Status"></span></label>
+                </div>
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecVP8" value="VP8">
+                    <label for="codecVP8">VP8 <span id="vp8Status"></span></label>
+                </div>
+            </div>
+            <div class="resolution-select">
+                <label>해상도:</label>
+                <select id="resolution">
+                    <option value="1920x1080">1080p (1920x1080)</option>
+                    <option value="1280x720">720p (1280x720)</option>
+                    <option value="3840x2160">4K (3840x2160)</option>
+                    <option value="640x480">480p (640x480)</option>
+                </select>
+                <label>비트레이트:</label>
+                <select id="bitrate">
+                    <option value="8000000">8 Mbps</option>
+                    <option value="4000000">4 Mbps</option>
+                    <option value="2000000">2 Mbps</option>
+                    <option value="16000000">16 Mbps</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="status" id="status">대기 중...</div>
+
+        <div class="codec-info" id="codecInfo">코덱 확인 중...</div>
+
+        <div class="video-container">
+            <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+
+        <div class="info">
+            <p>수신자 페이지: <a href="receiver.html" target="_blank">receiver.html</a></p>
+        </div>
+    </div>
+
+    <script src="sender.js"></script>
+</body>
+</html>

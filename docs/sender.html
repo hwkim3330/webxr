@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>360 VR - 송신자</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📹 송신자</h1>
+
+        <div class="controls">
+            <label for="roomId">룸 ID:</label>
+            <input type="text" id="roomId" value="" placeholder="룸 ID 입력 (예: room123)">
+            <button id="startBtn" class="btn-primary">스트리밍 시작</button>
+            <button id="stopBtn" class="btn-danger" disabled>중지</button>
+        </div>
+
+        <div class="peer-info" id="peerInfo" style="display:none;">
+            <div class="peer-label">내 Peer ID (수신자에게 공유)</div>
+            <div class="peer-id" id="myPeerId">-</div>
+        </div>
+
+        <div class="settings-panel">
+            <h3>코덱 설정</h3>
+            <div class="codec-options" id="codecOptions">
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecH265" value="H265">
+                    <label for="codecH265">H.265 <span id="h265Status"></span></label>
+                </div>
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecVP9" value="VP9" checked>
+                    <label for="codecVP9">VP9 <span id="vp9Status"></span></label>
+                </div>
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecH264" value="H264">
+                    <label for="codecH264">H.264 <span id="h264Status"></span></label>
+                </div>
+                <div class="codec-option">
+                    <input type="radio" name="codec" id="codecVP8" value="VP8">
+                    <label for="codecVP8">VP8 <span id="vp8Status"></span></label>
+                </div>
+            </div>
+            <div class="settings-row">
+                <label>해상도:</label>
+                <select id="resolution">
+                    <option value="1920x1080">1080p</option>
+                    <option value="1280x720">720p</option>
+                    <option value="3840x2160">4K</option>
+                </select>
+                <label>비트레이트:</label>
+                <select id="bitrate">
+                    <option value="8000000">8 Mbps</option>
+                    <option value="4000000">4 Mbps</option>
+                    <option value="2000000">2 Mbps</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="status" id="status">대기 중</div>
+        <div class="codec-info" id="codecInfo">-</div>
+
+        <div class="video-container">
+            <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+
+        <div class="info">
+            <a href="index.html">← 홈으로</a> |
+            <a href="receiver.html" target="_blank">수신자 페이지 열기 →</a>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="sender.js"></script>
+</body>
+</html>

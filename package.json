@@ -1,0 +1,13 @@
+{
+  "name": "galaxy-xr-360",
+  "version": "1.0.0",
+  "description": "WebXR 360도 실시간 영상 전송 시스템",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2"
+  }
+}
