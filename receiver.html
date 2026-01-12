@@ -276,6 +276,14 @@
     </div>
     <div class="status-right" id="statsDisplay" style="display: none;">
       <div class="stat-item">
+        <span class="stat-value" id="codec">-</span>
+        <span>codec</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value" id="resolution">-</span>
+        <span>res</span>
+      </div>
+      <div class="stat-item">
         <span class="stat-value" id="fps">0</span>
         <span>fps</span>
       </div>
@@ -310,59 +318,47 @@
 
     let ws = null;
     let peerConnection = null;
+    let receiverId = null;
     let statsInterval = null;
 
-    // Update Status
     function updateStatus(text) {
       statusText.textContent = text;
       loadingText.textContent = text;
     }
 
-    // WebSocket Connection
     function connectWebSocket() {
-      // 항상 현재 페이지의 host 사용 (localhost든 IP든 동일하게)
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${location.host}?role=receiver`;
-      console.log('[WS] Connecting to:', wsUrl);
+      console.log('[WS] Connecting:', wsUrl);
 
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         updateStatus('Connected - Waiting for stream...');
+        console.log('[WS] Connected');
       };
 
       ws.onmessage = async (event) => {
-        // Blob이면 텍스트로 변환
-        let message = event.data;
-        if (event.data instanceof Blob) {
-          console.log('[BLOB RECEIVED] Size:', event.data.size, '- Converting to text...');
-          message = await event.data.text();
-          console.log('[BLOB TO TEXT]', message.substring(0, 100) + '...');
-        } else {
-          console.log('[RAW MESSAGE]', event.data.substring(0, 100) + '...');
+        const data = JSON.parse(event.data);
+        console.log('[←]', data.type);
+
+        if (data.type === 'receiver-id') {
+          receiverId = data.receiverId;
+          console.log('[RECEIVER] ID:', receiverId);
         }
-
-        let data;
-        try {
-          data = JSON.parse(message);
-        } catch(e) {
-          console.error('[PARSE ERROR]', e, message);
-          return;
+        else if (data.type === 'waiting-for-sender') {
+          updateStatus('Waiting for broadcaster...');
         }
-
-        console.log('[RECV]', data.type);
-
-        if (data.type === 'sender-ready') {
-          console.log('[STREAM] Available');
-          updateStatus('Stream found - Connecting...');
-        } else if (data.type === 'offer') {
+        else if (data.type === 'offer') {
           console.log('[OFFER] Received');
           await handleOffer(data.offer);
-        } else if (data.type === 'ice-candidate') {
-          if (peerConnection) {
+        }
+        else if (data.type === 'ice-candidate') {
+          if (peerConnection && data.candidate) {
             await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
           }
-        } else if (data.type === 'sender-disconnected') {
+        }
+        else if (data.type === 'sender-disconnected') {
           updateStatus('Stream ended');
           loadingOverlay.classList.remove('hidden');
           liveBadge.style.display = 'none';
@@ -374,25 +370,21 @@
         }
       };
 
-      ws.onerror = (error) => {
-        console.error('[WS ERROR]', error);
-        updateStatus('Connection error');
-      };
-
-      ws.onclose = (event) => {
-        console.log('[WS CLOSE]', 'Code:', event.code, 'Reason:', event.reason, 'Clean:', event.wasClean);
+      ws.onerror = () => updateStatus('Connection error');
+      ws.onclose = () => {
         updateStatus('Disconnected - Reconnecting...');
         setTimeout(connectWebSocket, 3000);
       };
     }
 
-    // Handle Offer
     async function handleOffer(offer) {
+      console.log('[OFFER] Creating PeerConnection');
+
       const config = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ],
         sdpSemantics: 'unified-plan',
         bundlePolicy: 'max-bundle',
@@ -403,7 +395,7 @@
       peerConnection = new RTCPeerConnection(config);
 
       peerConnection.ontrack = (event) => {
-        console.log('[STREAM] Started');
+        console.log('[STREAM] ✓ Started');
         remoteVideo.srcObject = event.streams[0];
         loadingOverlay.classList.add('hidden');
         liveBadge.style.display = 'flex';
@@ -422,43 +414,34 @@
         }
       };
 
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('[ICE]', peerConnection.iceConnectionState);
+      };
+
       peerConnection.onconnectionstatechange = () => {
         console.log('[CONNECTION]', peerConnection.connectionState);
-
-        if (peerConnection.connectionState === 'disconnected' ||
-            peerConnection.connectionState === 'failed') {
-          updateStatus('Connection lost - Reconnecting...');
+        if (peerConnection.connectionState === 'connected') {
+          console.log('[CONNECTION] ✓ Connected');
+        } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
+          updateStatus('Connection lost');
           loadingOverlay.classList.remove('hidden');
           liveBadge.style.display = 'none';
           statsDisplay.style.display = 'none';
-        } else if (peerConnection.connectionState === 'connected') {
-          updateStatus('Connected');
         }
       };
 
-      console.log('[SDP] Setting remote description...');
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-
-      console.log('[ANSWER] Creating...');
       const answer = await peerConnection.createAnswer();
-
-      let sdp = answer.sdp;
-      sdp = sdp.replace(/profile-level-id=[0-9a-f]+/g, 'profile-level-id=42e01f');
-      answer.sdp = sdp;
-
       await peerConnection.setLocalDescription(answer);
-      console.log('[ANSWER] Ready');
 
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'answer',
-          answer: answer
-        }));
-        console.log('[ANSWER] Sent');
-      }
+      ws.send(JSON.stringify({
+        type: 'answer',
+        answer: answer
+      }));
+
+      console.log('[→] Answer sent');
     }
 
-    // Stats Monitoring
     function startStatsMonitoring() {
       if (statsInterval) clearInterval(statsInterval);
 
@@ -466,8 +449,13 @@
         if (!peerConnection) return;
 
         const stats = await peerConnection.getStats();
+        let codecInfo = null;
+
         stats.forEach(report => {
-          if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+          // 코덱 정보
+          if (report.type === 'inbound-rtp' && report.mediaType === 'video' && report.codecId) {
+            codecInfo = report.codecId;
+
             if (report.framesPerSecond) {
               const fpsEl = document.getElementById('fps');
               const fps = Math.round(report.framesPerSecond);
@@ -481,6 +469,21 @@
               bitrateEl.textContent = bitrate;
               bitrateEl.className = bitrate > 1500 ? 'stat-value good' : bitrate > 800 ? 'stat-value warning' : 'stat-value danger';
             }
+
+            // 해상도 정보
+            if (report.frameWidth && report.frameHeight) {
+              const resEl = document.getElementById('resolution');
+              resEl.textContent = `${report.frameWidth}x${report.frameHeight}`;
+              resEl.className = 'stat-value good';
+            }
+          }
+
+          // 코덱 상세 정보
+          if (report.type === 'codec' && report.id === codecInfo) {
+            const codecEl = document.getElementById('codec');
+            const codecName = report.mimeType ? report.mimeType.split('/')[1].toUpperCase() : 'Unknown';
+            codecEl.textContent = codecName;
+            codecEl.className = 'stat-value good';
           }
 
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
@@ -495,23 +498,16 @@
       }, 1000);
     }
 
-    // Reconnect
-    reconnectBtn.onclick = () => {
-      location.reload();
-    };
+    reconnectBtn.onclick = () => location.reload();
 
-    // Fullscreen
     fullscreenBtn.onclick = () => {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen();
-        fullscreenBtn.textContent = '⛶';
       } else {
         document.exitFullscreen();
-        fullscreenBtn.textContent = '⛶';
       }
     };
 
-    // Auto-hide UI after 3 seconds of no mouse movement
     let hideTimeout;
     document.addEventListener('mousemove', () => {
       document.body.style.cursor = 'default';
@@ -523,7 +519,6 @@
       }, 3000);
     });
 
-    // Start
     connectWebSocket();
   </script>
 </body>

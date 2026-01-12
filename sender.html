@@ -402,13 +402,10 @@
 
       <div class="video-controls">
         <button id="startBtn" class="btn btn-primary">
-          Start & Go Live
+          🎥 Start Broadcasting
         </button>
-        <button id="stopBtn" class="btn btn-secondary" disabled>
-          Stop Camera
-        </button>
-        <button id="streamBtn" class="btn btn-success" disabled>
-          Go Live
+        <button id="stopBtn" class="btn btn-danger" disabled>
+          ⏹ Stop Broadcasting
         </button>
       </div>
     </div>
@@ -485,72 +482,169 @@
     const videoOverlay = document.getElementById('videoOverlay');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
-    const streamBtn = document.getElementById('streamBtn');
     const statusIndicator = document.getElementById('statusIndicator');
     const statusText = document.getElementById('statusText');
 
     let localStream = null;
     let ws = null;
-    let peerConnection = null;
+    const peerConnections = new Map(); // Map<receiverId, RTCPeerConnection>
 
-    // Status Update
     function updateStatus(state, text) {
       statusIndicator.className = `status-indicator ${state}`;
       statusText.textContent = text;
     }
 
-    // WebSocket Connection
     function connectWebSocket() {
-      // 항상 현재 페이지의 host 사용 (localhost든 IP든 동일하게)
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${location.host}?role=sender`;
-      console.log('🔗 Connecting to:', wsUrl);
+      console.log('[WS] Connecting:', wsUrl);
 
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         updateStatus('connected', 'Server Connected');
+        console.log('[WS] Connected');
       };
 
       ws.onmessage = async (event) => {
-        if (event.data instanceof Blob) return;
         const data = JSON.parse(event.data);
-        console.log('[RECV]', data.type);
+        console.log('[←]', data.type, data.receiverId);
 
-        if (data.type === 'answer') {
-          console.log('[ANSWER] Received');
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-        } else if (data.type === 'ice-candidate') {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } else if (data.type === 'receiver-ready') {
-          console.log('[VIEWER] Joined');
-          document.getElementById('viewerCount').textContent = '1';
-          if (peerConnection) {
-            console.log('[AUTO] Sending offer to new viewer');
-            createOffer();
-          } else {
-            console.log('[AUTO] Viewer waiting, but not streaming yet');
+        if (data.type === 'request-offer') {
+          // 새 수신자를 위한 offer 생성
+          await createOfferForReceiver(data.receiverId);
+          document.getElementById('viewerCount').textContent = peerConnections.size;
+        }
+        else if (data.type === 'answer') {
+          // 특정 수신자로부터 answer 수신
+          const pc = peerConnections.get(data.receiverId);
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            console.log(`[RECEIVER ${data.receiverId}] Answer set`);
+          }
+        }
+        else if (data.type === 'ice-candidate') {
+          // 특정 수신자로부터 ICE candidate 수신
+          const pc = peerConnections.get(data.receiverId);
+          if (pc && data.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
+        else if (data.type === 'receiver-disconnected') {
+          // 수신자 연결 종료
+          const pc = peerConnections.get(data.receiverId);
+          if (pc) {
+            pc.close();
+            peerConnections.delete(data.receiverId);
+            console.log(`[RECEIVER ${data.receiverId}] Disconnected`);
+            document.getElementById('viewerCount').textContent = peerConnections.size;
           }
         }
       };
 
-      ws.onerror = () => {
-        updateStatus('disconnected', 'Connection Failed');
-      };
-
+      ws.onerror = () => updateStatus('disconnected', 'Connection Failed');
       ws.onclose = () => {
         updateStatus('disconnected', 'Disconnected');
         setTimeout(connectWebSocket, 3000);
       };
     }
 
-    // Start Camera & Go Live (통합)
+    async function createOfferForReceiver(receiverId) {
+      if (!localStream) {
+        console.log('[ERROR] No local stream');
+        return;
+      }
+
+      console.log(`[→ RECEIVER ${receiverId}] Creating PeerConnection`);
+
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+        ],
+        sdpSemantics: 'unified-plan',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 10
+      };
+
+      const pc = new RTCPeerConnection(config);
+      peerConnections.set(receiverId, pc);
+
+      // Add tracks
+      localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
+
+      // Set bitrate
+      const senders = pc.getSenders();
+      senders.forEach(sender => {
+        if (sender.track && sender.track.kind === 'video') {
+          const params = sender.getParameters();
+          if (!params.encodings) params.encodings = [{}];
+          params.encodings[0].maxBitrate = parseInt(document.getElementById('bitrateSelect').value);
+          params.encodings[0].maxFramerate = parseInt(document.getElementById('fpsSelect').value);
+          sender.setParameters(params);
+        }
+      });
+
+      // ICE candidate handler
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            receiverId: receiverId,
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      // Connection state monitoring
+      pc.oniceconnectionstatechange = () => {
+        console.log(`[RECEIVER ${receiverId}] ICE:`, pc.iceConnectionState);
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[RECEIVER ${receiverId}] Connection:`, pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          console.log(`[RECEIVER ${receiverId}] ✓ Connected`);
+          if (!window.statsMonitoringInterval) {
+            startStatsMonitoring();
+          }
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          peerConnections.delete(receiverId);
+          document.getElementById('viewerCount').textContent = peerConnections.size;
+          if (peerConnections.size === 0 && window.statsMonitoringInterval) {
+            clearInterval(window.statsMonitoringInterval);
+            window.statsMonitoringInterval = null;
+          }
+        }
+      };
+
+      // Create and send offer
+      const offer = await pc.createOffer();
+      let sdp = offer.sdp;
+      sdp = sdp.replace(/profile-level-id=[0-9a-f]+/g, 'profile-level-id=42e01f');
+      offer.sdp = sdp;
+
+      await pc.setLocalDescription(offer);
+
+      ws.send(JSON.stringify({
+        type: 'offer',
+        receiverId: receiverId,
+        offer: offer
+      }));
+
+      console.log(`[→ RECEIVER ${receiverId}] Offer sent`);
+    }
+
+    // Start Camera & Stream
     startBtn.onclick = async () => {
       try {
         const resolution = document.getElementById('resolutionSelect').value.split('x');
         const fps = parseInt(document.getElementById('fpsSelect').value);
 
-        // 카메라 시작
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: parseInt(resolution[0]) },
@@ -562,21 +656,16 @@
 
         localVideo.srcObject = localStream;
         videoOverlay.classList.remove('show');
-
         startBtn.disabled = true;
         stopBtn.disabled = false;
 
-        updateStatus('connected', 'Camera Started');
+        updateStatus('streaming', 'Live Streaming');
+        console.log('[CAMERA] Started');
 
-        // 바로 Go Live 시작
-        setTimeout(() => {
-          createPeerConnection();
-          createOffer();
-          streamBtn.innerHTML = '<span class="loading">●</span> Live';
-          streamBtn.className = 'btn btn-danger';
-          streamBtn.disabled = true;
-          updateStatus('streaming', 'Live Streaming');
-        }, 500);
+        // 카메라 시작 후 서버에 알림 (서버가 대기중인 수신자들에게 offer 요청)
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'camera-ready' }));
+        }
 
       } catch (error) {
         alert('Camera access failed: ' + error.message);
@@ -591,137 +680,62 @@
         localStream = null;
       }
 
-      if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-      }
+      peerConnections.forEach(pc => pc.close());
+      peerConnections.clear();
 
       videoOverlay.classList.add('show');
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      streamBtn.innerHTML = 'Live';
-      streamBtn.className = 'btn btn-success';
-      streamBtn.disabled = true;
+      document.getElementById('viewerCount').textContent = '0';
 
       updateStatus('connected', 'Stopped');
     };
 
-    // Go Live (이제 사용 안 함 - Start 버튼에 통합됨)
-    streamBtn.onclick = () => {
-      // 버튼은 비활성화 상태로 유지
-    };
-
-    // Create Peer Connection
-    function createPeerConnection() {
-      const config = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
-        ],
-        sdpSemantics: 'unified-plan',
-        bundlePolicy: 'max-bundle',
-        rtcpMuxPolicy: 'require',
-        iceCandidatePoolSize: 10
-      };
-
-      peerConnection = new RTCPeerConnection(config);
-
-      localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-      });
-
-      const senders = peerConnection.getSenders();
-      senders.forEach(sender => {
-        if (sender.track && sender.track.kind === 'video') {
-          const params = sender.getParameters();
-          if (!params.encodings) params.encodings = [{}];
-          params.encodings[0].maxBitrate = parseInt(document.getElementById('bitrateSelect').value);
-          params.encodings[0].maxFramerate = parseInt(document.getElementById('fpsSelect').value);
-          sender.setParameters(params);
-        }
-      });
-
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'ice-candidate',
-            candidate: event.candidate
-          }));
-        }
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        console.log('[CONNECTION]', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          startStatsMonitoring();
-        }
-      };
-    }
-
-    // Create Offer
-    async function createOffer() {
-      if (!peerConnection) return;
-
-      console.log('[OFFER] Creating...');
-      const offer = await peerConnection.createOffer();
-
-      let sdp = offer.sdp;
-      sdp = sdp.replace(/profile-level-id=[0-9a-f]+/g, 'profile-level-id=42e01f');
-      sdp = sdp.replace(/(a=fmtp:\d+.*)/g, '$1;x-google-start-bitrate=2500;x-google-max-bitrate=2500;x-google-min-bitrate=1000');
-      offer.sdp = sdp;
-
-      await peerConnection.setLocalDescription(offer);
-      console.log('[OFFER] Ready');
-
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'offer',
-          offer: offer
-        }));
-        console.log('[OFFER] Sent');
-      }
-    }
-
-    // Stats Monitoring
     function startStatsMonitoring() {
-      setInterval(async () => {
-        if (!peerConnection) return;
+      window.statsMonitoringInterval = setInterval(async () => {
+        if (peerConnections.size === 0) return;
 
-        const stats = await peerConnection.getStats();
-        stats.forEach(report => {
-          if (report.type === 'outbound-rtp' && report.mediaType === 'video') {
-            if (report.bytesSent) {
-              const bitrate = Math.round(report.bytesSent * 8 / 1000);
-              const bitrateEl = document.getElementById('bitrate');
-              bitrateEl.textContent = bitrate + ' kbps';
-              bitrateEl.className = bitrate > 1500 ? 'stat-value good' : bitrate > 800 ? 'stat-value warning' : 'stat-value danger';
+        // Get stats from the first connected peer
+        const firstPeer = Array.from(peerConnections.values())[0];
+        if (!firstPeer) return;
+
+        try {
+          const stats = await firstPeer.getStats();
+          let bytesSent = 0;
+          let prevBytesSent = window.prevBytesSent || 0;
+
+          stats.forEach(report => {
+            if (report.type === 'outbound-rtp' && report.mediaType === 'video') {
+              if (report.bytesSent) {
+                bytesSent = report.bytesSent;
+                const bitrate = Math.round((bytesSent - prevBytesSent) * 8 / 1000);
+                document.getElementById('bitrate').textContent = bitrate + ' kbps';
+              }
+
+              if (report.framesPerSecond) {
+                document.getElementById('fps').textContent = Math.round(report.framesPerSecond);
+              }
             }
 
-            if (report.framesPerSecond) {
-              const fpsEl = document.getElementById('fps');
-              fpsEl.textContent = Math.round(report.framesPerSecond);
+            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+              if (report.currentRoundTripTime) {
+                const rtt = Math.round(report.currentRoundTripTime * 1000);
+                document.getElementById('rtt').textContent = rtt + ' ms';
+              }
             }
-          }
 
-          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-            if (report.currentRoundTripTime) {
-              const rtt = Math.round(report.currentRoundTripTime * 1000);
-              const rttEl = document.getElementById('rtt');
-              rttEl.textContent = rtt + ' ms';
-              rttEl.className = rtt < 100 ? 'stat-value good' : rtt < 300 ? 'stat-value warning' : 'stat-value danger';
+            if (report.type === 'remote-inbound-rtp' && report.mediaType === 'video') {
+              if (report.packetsLost !== undefined && report.packetsReceived) {
+                const loss = ((report.packetsLost / (report.packetsReceived + report.packetsLost)) * 100).toFixed(1);
+                document.getElementById('packetLoss').textContent = loss + '%';
+              }
             }
-          }
+          });
 
-          if (report.type === 'remote-inbound-rtp' && report.mediaType === 'video') {
-            if (report.packetsLost !== undefined) {
-              const loss = (report.packetsLost / (report.packetsReceived + report.packetsLost) * 100).toFixed(1);
-              const lossEl = document.getElementById('packetLoss');
-              lossEl.textContent = loss + '%';
-              lossEl.className = loss < 2 ? 'stat-value good' : loss < 5 ? 'stat-value warning' : 'stat-value danger';
-            }
-          }
-        });
+          window.prevBytesSent = bytesSent;
+        } catch (error) {
+          console.error('[STATS ERROR]', error);
+        }
       }, 1000);
     }
 

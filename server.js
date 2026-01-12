@@ -1,4 +1,4 @@
-// 초경량 WebSocket 시그널링 서버 (내부망 최적화)
+// WebRTC 1:N Broadcasting Server
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -7,113 +7,148 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// 정적 파일 제공
 app.use(express.static('.'));
 
-// 연결된 클라이언트 관리
+// 클라이언트 관리
 let sender = null;
-const receivers = new Set();
-let lastOffer = null; // 마지막 offer 캐시
+const receivers = new Map(); // Map<receiverId, {ws, receiverId}>
+let receiverIdCounter = 0;
 
 wss.on('connection', (ws, req) => {
   const role = new URL(req.url, 'http://localhost').searchParams.get('role');
 
-  console.log(`[${new Date().toISOString()}] ${role} connected`);
-
   if (role === 'sender') {
-    // 기존 송신자 끊기
+    // 송신자 연결
     if (sender) {
       sender.close();
+      console.log('[SENDER] 기존 송신자 종료');
     }
     sender = ws;
+    console.log('[SENDER] 연결됨');
 
-    // 모든 수신자에게 송신자 준비 알림
-    receivers.forEach(receiver => {
-      if (receiver.readyState === WebSocket.OPEN) {
-        receiver.send(JSON.stringify({ type: 'sender-ready' }));
+    // 현재 연결된 수신자들에게 offer 요청
+    receivers.forEach(({receiverId}) => {
+      sender.send(JSON.stringify({
+        type: 'request-offer',
+        receiverId: receiverId
+      }));
+    });
+
+    ws.on('message', (message) => {
+      const data = JSON.parse(message);
+
+      if (data.type === 'camera-ready') {
+        // 카메라 준비됨 - 모든 수신자에게 offer 요청
+        console.log('[SENDER] Camera ready - requesting offers for all receivers');
+        receivers.forEach(({receiverId}) => {
+          sender.send(JSON.stringify({
+            type: 'request-offer',
+            receiverId: receiverId
+          }));
+        });
+      }
+      else if (data.type === 'offer') {
+        // 특정 수신자에게 offer 전달
+        const receiver = receivers.get(data.receiverId);
+        if (receiver && receiver.ws.readyState === WebSocket.OPEN) {
+          receiver.ws.send(JSON.stringify({
+            type: 'offer',
+            offer: data.offer
+          }));
+          console.log(`[SENDER → RECEIVER ${data.receiverId}] offer`);
+        }
+      } else if (data.type === 'ice-candidate') {
+        // 특정 수신자에게 ICE candidate 전달
+        const receiver = receivers.get(data.receiverId);
+        if (receiver && receiver.ws.readyState === WebSocket.OPEN) {
+          receiver.ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            candidate: data.candidate
+          }));
+        }
       }
     });
 
-    // 송신자에게 현재 연결된 수신자 수 알림
-    if (receivers.size > 0) {
-      ws.send(JSON.stringify({ type: 'receiver-ready' }));
-    }
-  } else {
-    receivers.add(ws);
-
-    // 송신자가 이미 있으면 알림
-    if (sender && sender.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'sender-ready' }));
-
-      // 캐시된 offer가 있으면 즉시 전송
-      if (lastOffer) {
-        console.log('  → 캐시된 offer 전송');
-        ws.send(lastOffer);
-      }
-
-      // 송신자에게도 새 수신자 알림
-      sender.send(JSON.stringify({ type: 'receiver-ready' }));
-    }
-  }
-
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      console.log(`[${role}] 메시지: ${data.type}`);
-
-      // 송신자 → 수신자로 시그널 전달
-      if (role === 'sender') {
-        // offer 메시지면 캐시에 저장
-        if (data.type === 'offer') {
-          lastOffer = message;
-        }
-
-        console.log(`  → ${receivers.size}명의 수신자에게 전달`);
-        receivers.forEach(receiver => {
-          if (receiver.readyState === WebSocket.OPEN) {
-            receiver.send(message);
-          }
-        });
-      }
-      // 수신자 → 송신자로 시그널 전달
-      else {
-        if (sender && sender.readyState === WebSocket.OPEN) {
-          console.log(`  → 송신자에게 전달`);
-          sender.send(message);
-        } else {
-          console.log(`  ❌ 송신자가 없거나 연결 끊김`);
-        }
-      }
-    } catch (error) {
-      console.error('Message parse error:', error);
-    }
-  });
-
-  ws.on('close', () => {
-    console.log(`[${new Date().toISOString()}] ${role} disconnected`);
-
-    if (role === 'sender') {
+    ws.on('close', () => {
+      console.log('[SENDER] 연결 종료');
       sender = null;
       // 모든 수신자에게 송신자 종료 알림
-      receivers.forEach(receiver => {
-        if (receiver.readyState === WebSocket.OPEN) {
-          receiver.send(JSON.stringify({ type: 'sender-disconnected' }));
+      receivers.forEach(({ws}) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'sender-disconnected' }));
         }
       });
+    });
+
+  } else if (role === 'receiver') {
+    // 수신자 연결
+    const receiverId = receiverIdCounter++;
+    receivers.set(receiverId, { ws, receiverId });
+    console.log(`[RECEIVER ${receiverId}] 연결됨 (총 ${receivers.size}명)`);
+
+    // 수신자에게 ID 전송
+    ws.send(JSON.stringify({
+      type: 'receiver-id',
+      receiverId: receiverId
+    }));
+
+    // 송신자가 있으면 offer 요청
+    if (sender && sender.readyState === WebSocket.OPEN) {
+      sender.send(JSON.stringify({
+        type: 'request-offer',
+        receiverId: receiverId
+      }));
     } else {
-      receivers.delete(ws);
+      ws.send(JSON.stringify({ type: 'waiting-for-sender' }));
     }
-  });
+
+    ws.on('message', (message) => {
+      const data = JSON.parse(message);
+
+      if (data.type === 'answer') {
+        // 송신자에게 answer 전달
+        if (sender && sender.readyState === WebSocket.OPEN) {
+          sender.send(JSON.stringify({
+            type: 'answer',
+            receiverId: receiverId,
+            answer: data.answer
+          }));
+          console.log(`[RECEIVER ${receiverId} → SENDER] answer`);
+        }
+      } else if (data.type === 'ice-candidate') {
+        // 송신자에게 ICE candidate 전달
+        if (sender && sender.readyState === WebSocket.OPEN) {
+          sender.send(JSON.stringify({
+            type: 'ice-candidate',
+            receiverId: receiverId,
+            candidate: data.candidate
+          }));
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      console.log(`[RECEIVER ${receiverId}] 연결 종료`);
+      receivers.delete(receiverId);
+
+      // 송신자에게 수신자 종료 알림
+      if (sender && sender.readyState === WebSocket.OPEN) {
+        sender.send(JSON.stringify({
+          type: 'receiver-disconnected',
+          receiverId: receiverId
+        }));
+      }
+    });
+  }
 
   ws.on('error', (error) => {
-    console.error(`WebSocket error:`, error);
+    console.error('[WS ERROR]', error.message);
   });
 });
 
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, '0.0.0.0', () => {
-  // 로컬 IP 주소 출력
   const os = require('os');
   const interfaces = os.networkInterfaces();
   const addresses = [];
@@ -127,7 +162,7 @@ server.listen(PORT, '0.0.0.0', () => {
   }
 
   console.log('\n=================================');
-  console.log('WebXR Low-Latency Stream Server');
+  console.log('WebXR 1:N Broadcasting Server');
   console.log('=================================\n');
   console.log(`송신자: http://localhost:${PORT}/sender.html`);
   console.log(`수신자: http://localhost:${PORT}/receiver.html\n`);
