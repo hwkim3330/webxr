@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>360 VR 스트리밍</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="landing">
+        <div class="container">
+            <h1>360 VR 실시간 스트리밍</h1>
+            <p class="subtitle">WebRTC + WebXR 기반 P2P 영상 전송</p>
+
+            <div class="cards">
+                <a href="sender.html" class="card sender-card">
+                    <div class="card-icon">📹</div>
+                    <h2>싱글 카메라</h2>
+                    <p>웹캠 1대로 스트리밍</p>
+                </a>
+
+                <a href="sender-dual.html" class="card sender-card">
+                    <div class="card-icon">📹📹</div>
+                    <h2>듀얼 카메라</h2>
+                    <p>웹캠 2대 합성 스트리밍</p>
+                </a>
+
+                <a href="receiver.html" class="card receiver-card">
+                    <div class="card-icon">🥽</div>
+                    <h2>수신자 / VR</h2>
+                    <p>360도 구체에서 영상 시청</p>
+                </a>
+            </div>
+
+            <div class="info-section">
+                <h3>사용 방법</h3>
+                <ol>
+                    <li>송신자가 룸 ID를 정하고 스트리밍 시작</li>
+                    <li>수신자가 같은 룸 ID로 연결</li>
+                    <li>VR 기기에서 몰입 모드 사용 가능</li>
+                </ol>
+
+                <h3>기술 스택</h3>
+                <div class="tech-stack">
+                    <span class="tech-badge">WebRTC</span>
+                    <span class="tech-badge">PeerJS</span>
+                    <span class="tech-badge">Three.js</span>
+                    <span class="tech-badge">WebXR</span>
+                </div>
+            </div>
+
+            <footer>
+                <p>Galaxy XR / Android XR 호환</p>
+            </footer>
+        </div>
+    </div>
+</body>
+</html>
