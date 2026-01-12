@@ -460,13 +460,17 @@
         if (!peerConnection) return;
 
         const stats = await peerConnection.getStats();
-        let codecInfo = null;
+        let codecId = null;
 
         stats.forEach(report => {
-          // 코덱 정보
-          if (report.type === 'inbound-rtp' && report.mediaType === 'video' && report.codecId) {
-            codecInfo = report.codecId;
+          // Video inbound RTP stats
+          if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+            // Store codec ID for later lookup
+            if (report.codecId) {
+              codecId = report.codecId;
+            }
 
+            // FPS
             if (report.framesPerSecond) {
               const fpsEl = document.getElementById('fps');
               const fps = Math.round(report.framesPerSecond);
@@ -474,14 +478,22 @@
               fpsEl.className = fps >= 25 ? 'stat-value good' : fps >= 15 ? 'stat-value warning' : 'stat-value danger';
             }
 
-            if (report.bytesReceived) {
-              const bitrate = Math.round(report.bytesReceived * 8 / 1000);
-              const bitrateEl = document.getElementById('bitrate');
-              bitrateEl.textContent = bitrate;
-              bitrateEl.className = bitrate > 1500 ? 'stat-value good' : bitrate > 800 ? 'stat-value warning' : 'stat-value danger';
+            // Bitrate
+            if (report.bytesReceived !== undefined) {
+              const currentBytes = report.bytesReceived;
+              const prevBytes = window.prevBytesReceived || 0;
+              const bitrate = Math.round((currentBytes - prevBytes) * 8 / 1000);
+
+              if (bitrate > 0) {
+                const bitrateEl = document.getElementById('bitrate');
+                bitrateEl.textContent = bitrate;
+                bitrateEl.className = bitrate > 1500 ? 'stat-value good' : bitrate > 800 ? 'stat-value warning' : 'stat-value danger';
+              }
+
+              window.prevBytesReceived = currentBytes;
             }
 
-            // 해상도 정보
+            // Resolution
             if (report.frameWidth && report.frameHeight) {
               const resEl = document.getElementById('resolution');
               resEl.textContent = `${report.frameWidth}x${report.frameHeight}`;
@@ -489,14 +501,30 @@
             }
           }
 
-          // 코덱 상세 정보
-          if (report.type === 'codec' && report.id === codecInfo) {
+          // Codec info
+          if (report.type === 'codec' && codecId && report.id === codecId) {
             const codecEl = document.getElementById('codec');
-            const codecName = report.mimeType ? report.mimeType.split('/')[1].toUpperCase() : 'Unknown';
-            codecEl.textContent = codecName;
-            codecEl.className = 'stat-value good';
+            if (report.mimeType) {
+              // mimeType format: "video/H264" or "video/VP8"
+              let codecName = report.mimeType.split('/')[1];
+
+              // Format codec name nicely
+              if (codecName.toLowerCase() === 'h264') {
+                codecName = 'H.264';
+              } else if (codecName.toLowerCase() === 'vp8') {
+                codecName = 'VP8';
+              } else if (codecName.toLowerCase() === 'vp9') {
+                codecName = 'VP9';
+              } else if (codecName.toLowerCase().includes('av1')) {
+                codecName = 'AV1';
+              }
+
+              codecEl.textContent = codecName;
+              codecEl.className = 'stat-value good';
+            }
           }
 
+          // Latency (RTT)
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
             if (report.currentRoundTripTime) {
               const latency = Math.round(report.currentRoundTripTime * 1000);
