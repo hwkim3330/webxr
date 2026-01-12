@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stream Control - WebXR Pro</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #272727;
+      --text-primary: #ffffff;
+      --text-secondary: #aaaaaa;
+      --accent: #3ea6ff;
+      --accent-hover: #65b8ff;
+      --success: #00d98e;
+      --warning: #ffa500;
+      --danger: #ff4444;
+      --border: #303030;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Top Bar */
+    .topbar {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent), #1e90ff);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .status-indicator {
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s;
+    }
+
+    .status-indicator::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.disconnected {
+      background: rgba(255, 68, 68, 0.1);
+      color: var(--danger);
+      border: 1px solid rgba(255, 68, 68, 0.3);
+    }
+
+    .status-indicator.disconnected::before {
+      background: var(--danger);
+    }
+
+    .status-indicator.connected {
+      background: rgba(0, 217, 142, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(0, 217, 142, 0.3);
+    }
+
+    .status-indicator.connected::before {
+      background: var(--success);
+    }
+
+    .status-indicator.streaming {
+      background: rgba(255, 0, 0, 0.1);
+      color: #ff0000;
+      border: 1px solid rgba(255, 0, 0, 0.3);
+    }
+
+    .status-indicator.streaming::before {
+      background: #ff0000;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Main Layout */
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 24px;
+      padding: 24px;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+
+    /* Video Preview */
+    .video-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .video-container {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      aspect-ratio: 16 / 9;
+      border: 1px solid var(--border);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .video-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .video-overlay.show {
+      opacity: 1;
+    }
+
+    .video-controls {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      justify-content: center;
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #ff6666;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-success:hover:not(:disabled) {
+      background: #00f5a0;
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #353535;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .setting-item {
+      margin-bottom: 16px;
+    }
+
+    .setting-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .setting-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    select:hover {
+      border-color: var(--accent);
+    }
+
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(62, 166, 255, 0.1);
+    }
+
+    /* Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--bg-tertiary);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-value.good {
+      color: var(--success);
+    }
+
+    .stat-value.warning {
+      color: var(--warning);
+    }
+
+    .stat-value.danger {
+      color: var(--danger);
+    }
+
+    /* Viewers */
+    .viewers {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .viewers-icon {
+      font-size: 20px;
+    }
+
+    .viewers-count {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .viewers-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        grid-row: 2;
+      }
+    }
+
+    /* Loading Animation */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading {
+      animation: spin 1s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-icon">LIVE</div>
+      <span>WebXR Stream Pro</span>
+    </div>
+    <div id="statusIndicator" class="status-indicator disconnected">
+      <span id="statusText">Connecting...</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="video-section">
+      <div class="video-container">
+        <video id="localVideo" autoplay muted playsinline></video>
+        <div id="videoOverlay" class="video-overlay show">CAM</div>
+      </div>
+
+      <div class="video-controls">
+        <button id="startBtn" class="btn btn-primary">
+          Start & Go Live
+        </button>
+        <button id="stopBtn" class="btn btn-secondary" disabled>
+          Stop Camera
+        </button>
+        <button id="streamBtn" class="btn btn-success" disabled>
+          Go Live
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <div class="panel">
+        <div class="panel-title">Viewers</div>
+        <div class="viewers">
+          <span class="viewers-icon">●</span>
+          <span id="viewerCount" class="viewers-count">0</span>
+          <span class="viewers-label">watching</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Stream Settings</div>
+
+        <div class="setting-item">
+          <label class="setting-label">Resolution</label>
+          <select id="resolutionSelect">
+            <option value="640x480">SD - 480p (640×480)</option>
+            <option value="1280x720" selected>HD - 720p (1280×720)</option>
+            <option value="1920x1080">Full HD - 1080p (1920×1080)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label">Frame Rate</label>
+          <select id="fpsSelect">
+            <option value="15">15 fps (Low bandwidth)</option>
+            <option value="24">24 fps (Cinematic)</option>
+            <option value="30" selected>30 fps (Balanced)</option>
+            <option value="60">60 fps (Smooth)</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label class="setting-label">Bitrate</label>
+          <select id="bitrateSelect">
+            <option value="1000000">1 Mbps (Low)</option>
+            <option value="2000000">2 Mbps (Medium)</option>
+            <option value="2500000" selected>2.5 Mbps (High)</option>
+            <option value="5000000">5 Mbps (Ultra)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Stream Health</div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Bitrate</div>
+            <div id="bitrate" class="stat-value">0 kbps</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Latency</div>
+            <div id="rtt" class="stat-value">0 ms</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Packet Loss</div>
+            <div id="packetLoss" class="stat-value">0%</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">FPS</div>
+            <div id="fps" class="stat-value">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const localVideo = document.getElementById('localVideo');
+    const videoOverlay = document.getElementById('videoOverlay');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const streamBtn = document.getElementById('streamBtn');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusText = document.getElementById('statusText');
+
+    let localStream = null;
+    let ws = null;
+    let peerConnection = null;
+
+    // Status Update
+    function updateStatus(state, text) {
+      statusIndicator.className = `status-indicator ${state}`;
+      statusText.textContent = text;
+    }
+
+    // WebSocket Connection
+    function connectWebSocket() {
+      // 항상 현재 페이지의 host 사용 (localhost든 IP든 동일하게)
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}?role=sender`;
+      console.log('🔗 Connecting to:', wsUrl);
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        updateStatus('connected', 'Server Connected');
+      };
+
+      ws.onmessage = async (event) => {
+        if (event.data instanceof Blob) return;
+        const data = JSON.parse(event.data);
+        console.log('[RECV]', data.type);
+
+        if (data.type === 'answer') {
+          console.log('[ANSWER] Received');
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } else if (data.type === 'ice-candidate') {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } else if (data.type === 'receiver-ready') {
+          console.log('[VIEWER] Joined');
+          document.getElementById('viewerCount').textContent = '1';
+          if (peerConnection) {
+            console.log('[AUTO] Sending offer to new viewer');
+            createOffer();
+          } else {
+            console.log('[AUTO] Viewer waiting, but not streaming yet');
+          }
+        }
+      };
+
+      ws.onerror = () => {
+        updateStatus('disconnected', 'Connection Failed');
+      };
+
+      ws.onclose = () => {
+        updateStatus('disconnected', 'Disconnected');
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    // Start Camera & Go Live (통합)
+    startBtn.onclick = async () => {
+      try {
+        const resolution = document.getElementById('resolutionSelect').value.split('x');
+        const fps = parseInt(document.getElementById('fpsSelect').value);
+
+        // 카메라 시작
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: parseInt(resolution[0]) },
+            height: { ideal: parseInt(resolution[1]) },
+            frameRate: { ideal: fps }
+          },
+          audio: true
+        });
+
+        localVideo.srcObject = localStream;
+        videoOverlay.classList.remove('show');
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        updateStatus('connected', 'Camera Started');
+
+        // 바로 Go Live 시작
+        setTimeout(() => {
+          createPeerConnection();
+          createOffer();
+          streamBtn.innerHTML = '<span class="loading">●</span> Live';
+          streamBtn.className = 'btn btn-danger';
+          streamBtn.disabled = true;
+          updateStatus('streaming', 'Live Streaming');
+        }, 500);
+
+      } catch (error) {
+        alert('Camera access failed: ' + error.message);
+      }
+    };
+
+    // Stop Camera & Streaming
+    stopBtn.onclick = () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localVideo.srcObject = null;
+        localStream = null;
+      }
+
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
+      videoOverlay.classList.add('show');
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      streamBtn.innerHTML = 'Live';
+      streamBtn.className = 'btn btn-success';
+      streamBtn.disabled = true;
+
+      updateStatus('connected', 'Stopped');
+    };
+
+    // Go Live (이제 사용 안 함 - Start 버튼에 통합됨)
+    streamBtn.onclick = () => {
+      // 버튼은 비활성화 상태로 유지
+    };
+
+    // Create Peer Connection
+    function createPeerConnection() {
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ],
+        sdpSemantics: 'unified-plan',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 10
+      };
+
+      peerConnection = new RTCPeerConnection(config);
+
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      const senders = peerConnection.getSenders();
+      senders.forEach(sender => {
+        if (sender.track && sender.track.kind === 'video') {
+          const params = sender.getParameters();
+          if (!params.encodings) params.encodings = [{}];
+          params.encodings[0].maxBitrate = parseInt(document.getElementById('bitrateSelect').value);
+          params.encodings[0].maxFramerate = parseInt(document.getElementById('fpsSelect').value);
+          sender.setParameters(params);
+        }
+      });
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log('[CONNECTION]', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          startStatsMonitoring();
+        }
+      };
+    }
+
+    // Create Offer
+    async function createOffer() {
+      if (!peerConnection) return;
+
+      console.log('[OFFER] Creating...');
+      const offer = await peerConnection.createOffer();
+
+      let sdp = offer.sdp;
+      sdp = sdp.replace(/profile-level-id=[0-9a-f]+/g, 'profile-level-id=42e01f');
+      sdp = sdp.replace(/(a=fmtp:\d+.*)/g, '$1;x-google-start-bitrate=2500;x-google-max-bitrate=2500;x-google-min-bitrate=1000');
+      offer.sdp = sdp;
+
+      await peerConnection.setLocalDescription(offer);
+      console.log('[OFFER] Ready');
+
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'offer',
+          offer: offer
+        }));
+        console.log('[OFFER] Sent');
+      }
+    }
+
+    // Stats Monitoring
+    function startStatsMonitoring() {
+      setInterval(async () => {
+        if (!peerConnection) return;
+
+        const stats = await peerConnection.getStats();
+        stats.forEach(report => {
+          if (report.type === 'outbound-rtp' && report.mediaType === 'video') {
+            if (report.bytesSent) {
+              const bitrate = Math.round(report.bytesSent * 8 / 1000);
+              const bitrateEl = document.getElementById('bitrate');
+              bitrateEl.textContent = bitrate + ' kbps';
+              bitrateEl.className = bitrate > 1500 ? 'stat-value good' : bitrate > 800 ? 'stat-value warning' : 'stat-value danger';
+            }
+
+            if (report.framesPerSecond) {
+              const fpsEl = document.getElementById('fps');
+              fpsEl.textContent = Math.round(report.framesPerSecond);
+            }
+          }
+
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            if (report.currentRoundTripTime) {
+              const rtt = Math.round(report.currentRoundTripTime * 1000);
+              const rttEl = document.getElementById('rtt');
+              rttEl.textContent = rtt + ' ms';
+              rttEl.className = rtt < 100 ? 'stat-value good' : rtt < 300 ? 'stat-value warning' : 'stat-value danger';
+            }
+          }
+
+          if (report.type === 'remote-inbound-rtp' && report.mediaType === 'video') {
+            if (report.packetsLost !== undefined) {
+              const loss = (report.packetsLost / (report.packetsReceived + report.packetsLost) * 100).toFixed(1);
+              const lossEl = document.getElementById('packetLoss');
+              lossEl.textContent = loss + '%';
+              lossEl.className = loss < 2 ? 'stat-value good' : loss < 5 ? 'stat-value warning' : 'stat-value danger';
+            }
+          }
+        });
+      }, 1000);
+    }
+
+    connectWebSocket();
+  </script>
+</body>
+</html>

@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>송신자 - 웹캠 스트리밍</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      color: white;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .video-container {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 15px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    video {
+      width: 100%;
+      border-radius: 10px;
+      background: #000;
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: white;
+      color: #667eea;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 25px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.active {
+      background: #4ade80;
+      color: white;
+    }
+
+    button.danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .stats {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .stat-item {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    .stat-label {
+      font-size: 0.9em;
+      opacity: 0.8;
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-size: 1.5em;
+      font-weight: bold;
+    }
+
+    .settings {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 15px;
+      padding: 20px;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+    }
+
+    select {
+      background: white;
+      color: #667eea;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .status {
+      text-align: center;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+
+    .status.connected {
+      background: rgba(74, 222, 128, 0.3);
+    }
+
+    .status.disconnected {
+      background: rgba(239, 68, 68, 0.3);
+    }
+
+    .status.waiting {
+      background: rgba(251, 191, 36, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📹 송신자 - 웹캠 스트리밍</h1>
+
+    <div id="status" class="status disconnected">
+      시그널링 서버 연결 중...
+    </div>
+
+    <div class="video-container">
+      <video id="localVideo" autoplay muted playsinline></video>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">웹캠 시작</button>
+      <button id="stopBtn" disabled>웹캠 중지</button>
+      <button id="streamBtn" disabled>스트리밍 시작</button>
+    </div>
+
+    <div class="settings">
+      <h3 style="margin-bottom: 15px;">⚙️ 설정</h3>
+
+      <div class="setting-row">
+        <label>해상도:</label>
+        <select id="resolutionSelect">
+          <option value="640x480">480p (640x480)</option>
+          <option value="1280x720" selected>720p (1280x720)</option>
+          <option value="1920x1080">1080p (1920x1080)</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <label>프레임레이트:</label>
+        <select id="fpsSelect">
+          <option value="15">15 fps</option>
+          <option value="24">24 fps</option>
+          <option value="30" selected>30 fps</option>
+          <option value="60">60 fps</option>
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <label>비트레이트:</label>
+        <select id="bitrateSelect">
+          <option value="1000000">1 Mbps</option>
+          <option value="2000000">2 Mbps</option>
+          <option value="2500000" selected>2.5 Mbps (권장)</option>
+          <option value="5000000">5 Mbps</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="stats">
+      <h3 style="margin-bottom: 15px;">📊 실시간 통계</h3>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">연결된 수신자</div>
+          <div class="stat-value" id="receiverCount">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">전송 비트레이트</div>
+          <div class="stat-value" id="bitrate">0 kbps</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">패킷 손실</div>
+          <div class="stat-value" id="packetLoss">0%</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">RTT (지연시간)</div>
+          <div class="stat-value" id="rtt">0 ms</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const localVideo = document.getElementById('localVideo');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const streamBtn = document.getElementById('streamBtn');
+    const statusDiv = document.getElementById('status');
+
+    let localStream = null;
+    let ws = null;
+    let peerConnection = null;
+
+    // WebSocket 연결 (내부망/외부망 자동 감지)
+    function connectWebSocket() {
+      let wsUrl;
+
+      // 로컬 개발 또는 내부망 (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+      if (location.hostname === 'localhost' ||
+          location.hostname.startsWith('192.168.') ||
+          location.hostname.startsWith('10.') ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(location.hostname)) {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${location.host}?role=sender`;
+        console.log('🏠 내부망 모드:', wsUrl);
+      }
+      // 외부망 (클라우드 시그널링 서버 사용)
+      else {
+        // TODO: 클라우드 서버 배포 후 아래 주소를 변경하세요
+        const CLOUD_SERVER = 'wss://your-app.glitch.me'; // 여기를 수정!
+        wsUrl = `${CLOUD_SERVER}?role=sender`;
+        console.log('🌐 외부망 모드:', wsUrl);
+      }
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        updateStatus('connected', '시그널링 서버 연결됨');
+      };
+
+      ws.onmessage = async (event) => {
+        // Blob 데이터는 무시 (텍스트만 처리)
+        if (event.data instanceof Blob) {
+          return;
+        }
+
+        const data = JSON.parse(event.data);
+        console.log('📨 수신:', data.type);
+
+        if (data.type === 'answer') {
+          console.log('📥 Answer 수신!');
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } else if (data.type === 'ice-candidate') {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } else if (data.type === 'receiver-ready') {
+          console.log('✅ 수신자 발견! Offer 전송 시도...');
+          // PeerConnection이 이미 있으면 (스트리밍 중이면) offer 전송
+          if (peerConnection) {
+            createOffer();
+          }
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        updateStatus('disconnected', '시그널링 서버 연결 실패');
+      };
+
+      ws.onclose = () => {
+        updateStatus('disconnected', '시그널링 서버 연결 끊김');
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    // 웹캠 시작
+    startBtn.onclick = async () => {
+      try {
+        const resolution = document.getElementById('resolutionSelect').value.split('x');
+        const fps = parseInt(document.getElementById('fpsSelect').value);
+
+        const constraints = {
+          video: {
+            width: { ideal: parseInt(resolution[0]) },
+            height: { ideal: parseInt(resolution[1]) },
+            frameRate: { ideal: fps }
+          },
+          audio: true
+        };
+
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        localVideo.srcObject = localStream;
+
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        streamBtn.disabled = false;
+
+        updateStatus('waiting', '웹캠 활성화됨 - 스트리밍 대기 중');
+      } catch (error) {
+        console.error('웹캠 접근 실패:', error);
+        alert('웹캠 접근 실패: ' + error.message);
+      }
+    };
+
+    // 웹캠 중지
+    stopBtn.onclick = () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localVideo.srcObject = null;
+        localStream = null;
+      }
+
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      streamBtn.disabled = true;
+
+      updateStatus('disconnected', '웹캠 중지됨');
+    };
+
+    // 스트리밍 시작
+    streamBtn.onclick = () => {
+      createPeerConnection();
+      createOffer();
+      streamBtn.classList.add('active');
+      streamBtn.textContent = '스트리밍 중...';
+      updateStatus('connected', '스트리밍 중');
+    };
+
+    // RTCPeerConnection 생성 (내부망/외부망 자동 대응)
+    function createPeerConnection() {
+      // STUN 서버 추가 (내부망에서는 무시되고, 외부망에서 자동 활성화)
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ],
+        sdpSemantics: 'unified-plan',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 10 // 연결 속도 향상
+      };
+
+      peerConnection = new RTCPeerConnection(config);
+
+      // 로컬 스트림 추가
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      // Intel Quick Sync 활용 + 저지연 설정
+      const senders = peerConnection.getSenders();
+      senders.forEach(sender => {
+        if (sender.track && sender.track.kind === 'video') {
+          const params = sender.getParameters();
+          if (!params.encodings) {
+            params.encodings = [{}];
+          }
+
+          const bitrate = parseInt(document.getElementById('bitrateSelect').value);
+          params.encodings[0].maxBitrate = bitrate;
+          params.encodings[0].maxFramerate = parseInt(document.getElementById('fpsSelect').value);
+
+          // 저지연 모드
+          sender.setParameters(params);
+        }
+      });
+
+      // ICE candidate 처리
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      // 연결 상태 모니터링
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'connected') {
+          startStatsMonitoring();
+        }
+      };
+    }
+
+    // Offer 생성 (Intel Quick Sync H.264 우선)
+    async function createOffer() {
+      if (!peerConnection) {
+        console.error('❌ PeerConnection이 없습니다!');
+        return;
+      }
+
+      console.log('📤 Offer 생성 시작...');
+      const offer = await peerConnection.createOffer();
+
+      // SDP 수정: H.264 우선순위 + 저지연 설정
+      let sdp = offer.sdp;
+
+      // H.264 baseline profile (Intel Quick Sync 최적)
+      sdp = sdp.replace(/profile-level-id=[0-9a-f]+/g, 'profile-level-id=42e01f');
+
+      // 저지연 최적화
+      sdp = sdp.replace(/(a=fmtp:\d+.*)/g, '$1;x-google-start-bitrate=2500;x-google-max-bitrate=2500;x-google-min-bitrate=1000');
+
+      offer.sdp = sdp;
+
+      await peerConnection.setLocalDescription(offer);
+      console.log('✅ Local Description 설정 완료');
+
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'offer',
+          offer: offer
+        }));
+        console.log('📤 Offer 전송 완료');
+      } else {
+        console.error('❌ WebSocket이 열려있지 않습니다:', ws.readyState);
+      }
+    }
+
+    // 통계 모니터링
+    function startStatsMonitoring() {
+      setInterval(async () => {
+        if (!peerConnection) return;
+
+        const stats = await peerConnection.getStats();
+        stats.forEach(report => {
+          if (report.type === 'outbound-rtp' && report.mediaType === 'video') {
+            // 비트레이트
+            if (report.bytesSent) {
+              const bitrate = Math.round(report.bytesSent * 8 / 1000);
+              document.getElementById('bitrate').textContent = bitrate + ' kbps';
+            }
+          }
+
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            // RTT
+            if (report.currentRoundTripTime) {
+              document.getElementById('rtt').textContent =
+                Math.round(report.currentRoundTripTime * 1000) + ' ms';
+            }
+          }
+
+          if (report.type === 'remote-inbound-rtp' && report.mediaType === 'video') {
+            // 패킷 손실
+            if (report.packetsLost !== undefined) {
+              const loss = (report.packetsLost / (report.packetsReceived + report.packetsLost) * 100).toFixed(2);
+              document.getElementById('packetLoss').textContent = loss + '%';
+            }
+          }
+        });
+      }, 1000);
+    }
+
+    // 상태 업데이트
+    function updateStatus(state, message) {
+      statusDiv.className = `status ${state}`;
+      statusDiv.textContent = message;
+    }
+
+    // 초기화
+    connectWebSocket();
+  </script>
+</body>
+</html>

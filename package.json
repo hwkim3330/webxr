@@ -1,0 +1,28 @@
+{
+  "name": "webxr-lowlatency-stream",
+  "version": "1.0.0",
+  "description": "Low-latency WebRTC streaming for internal networks with Intel Quick Sync optimization",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:cloud": "node server-cloud.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "webrtc",
+    "streaming",
+    "low-latency",
+    "intel-quick-sync",
+    "internal-network"
+  ],
+  "author": "Kim Hyunwoo",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>수신자 - 웹캠 스트리밍</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #000;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    .container {
+      max-width: 100%;
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .video-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      position: relative;
+    }
+
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .overlay {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .status-card {
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(10px);
+      padding: 15px 25px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      pointer-events: auto;
+    }
+
+    .status-card.connected {
+      background: rgba(74, 222, 128, 0.2);
+      border: 2px solid #4ade80;
+      color: #4ade80;
+    }
+
+    .status-card.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      border: 2px solid #ef4444;
+      color: #ef4444;
+    }
+
+    .status-card.waiting {
+      background: rgba(251, 191, 36, 0.2);
+      border: 2px solid #fbbf24;
+      color: #fbbf24;
+    }
+
+    .stats-card {
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(10px);
+      padding: 15px;
+      border-radius: 12px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      pointer-events: auto;
+      min-width: 280px;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #4ade80;
+    }
+
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .controls-bottom {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      pointer-events: auto;
+    }
+
+    button {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      color: white;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      padding: 12px 24px;
+      border-radius: 25px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    button:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .fullscreen-btn {
+      background: rgba(102, 126, 234, 0.3);
+      border-color: #667eea;
+    }
+
+    .fullscreen-btn:hover {
+      background: rgba(102, 126, 234, 0.5);
+    }
+
+    .latency-indicator {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(10px);
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #4ade80;
+      pointer-events: none;
+    }
+
+    .latency-indicator.high {
+      color: #fbbf24;
+    }
+
+    .latency-indicator.critical {
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="video-container">
+      <div class="overlay">
+        <div id="status" class="status-card disconnected">
+          시그널링 서버 연결 중...
+        </div>
+
+        <div class="stats-card">
+          <div class="stat">
+            <div class="stat-label">해상도</div>
+            <div class="stat-value" id="resolution">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">FPS</div>
+            <div class="stat-value" id="fps">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">비트레이트</div>
+            <div class="stat-value" id="bitrate">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">패킷손실</div>
+            <div class="stat-value" id="packetLoss">0%</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <div>송신자 대기 중...</div>
+      </div>
+
+      <video id="remoteVideo" autoplay playsinline></video>
+
+      <div id="latency" class="latency-indicator">
+        0 ms
+      </div>
+
+      <div class="controls-bottom">
+        <button id="fullscreenBtn" class="fullscreen-btn">전체화면</button>
+        <button id="reconnectBtn">재연결</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const remoteVideo = document.getElementById('remoteVideo');
+    const statusDiv = document.getElementById('status');
+    const loadingDiv = document.getElementById('loading');
+    const latencyDiv = document.getElementById('latency');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const reconnectBtn = document.getElementById('reconnectBtn');
+
+    let ws = null;
+    let peerConnection = null;
+    let statsInterval = null;
+
+    // WebSocket 연결
+    function connectWebSocket() {
+      let wsUrl;
+
+      // 로컬 개발 또는 내부망 (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+      if (location.hostname === 'localhost' ||
+          location.hostname.startsWith('192.168.') ||
+          location.hostname.startsWith('10.') ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(location.hostname)) {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${location.host}?role=receiver`;
+        console.log('🏠 내부망 모드:', wsUrl);
+      }
+      // 외부망 (클라우드 시그널링 서버 사용)
+      else {
+        // TODO: 클라우드 서버 배포 후 아래 주소를 변경하세요
+        const CLOUD_SERVER = 'wss://your-app.glitch.me'; // 여기를 수정!
+        wsUrl = `${CLOUD_SERVER}?role=receiver`;
+        console.log('🌐 외부망 모드:', wsUrl);
+      }
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        updateStatus('waiting', '송신자 대기 중...');
+      };
+
+      ws.onmessage = async (event) => {
+        // Blob 데이터는 무시 (텍스트만 처리)
+        if (event.data instanceof Blob) {
+          return;
+        }
+
+        const data = JSON.parse(event.data);
+        console.log('📨 수신:', data.type);
+
+        if (data.type === 'sender-ready') {
+          console.log('✅ 송신자 발견!');
+          updateStatus('waiting', '송신자 발견 - 연결 중...');
+        } else if (data.type === 'offer') {
+          console.log('📥 Offer 수신!');
+          await handleOffer(data.offer);
+        } else if (data.type === 'ice-candidate') {
+          if (peerConnection) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        } else if (data.type === 'sender-disconnected') {
+          updateStatus('disconnected', '송신자 연결 끊김');
+          loadingDiv.style.display = 'block';
+          if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+          }
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        updateStatus('disconnected', '시그널링 서버 연결 실패');
+      };
+
+      ws.onclose = () => {
+        updateStatus('disconnected', '시그널링 서버 연결 끊김');
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    // Offer 처리
+    async function handleOffer(offer) {
+      // RTCPeerConnection 생성 (내부망/외부망 자동 대응)
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ],
+        sdpSemantics: 'unified-plan',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 10
+      };
+
+      peerConnection = new RTCPeerConnection(config);
+
+      // 원격 스트림 수신
+      peerConnection.ontrack = (event) => {
+        console.log('Track received:', event.track.kind);
+        remoteVideo.srcObject = event.streams[0];
+        loadingDiv.style.display = 'none';
+        updateStatus('connected', '스트리밍 수신 중');
+        startStatsMonitoring();
+      };
+
+      // ICE candidate 처리
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      // 연결 상태 모니터링
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+
+        if (peerConnection.connectionState === 'disconnected' ||
+            peerConnection.connectionState === 'failed') {
+          updateStatus('disconnected', '연결 끊김');
+          loadingDiv.style.display = 'block';
+        } else if (peerConnection.connectionState === 'connected') {
+          updateStatus('connected', '스트리밍 수신 중');
+        }
+      };
+
+      // Offer 설정 및 Answer 생성
+      console.log('📝 Remote Description 설정 중...');
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      console.log('✅ Remote Description 설정 완료');
+
+      console.log('📝 Answer 생성 중...');
+      const answer = await peerConnection.createAnswer();
+
+      // SDP 최적화 (하드웨어 디코더 활용)
+      let sdp = answer.sdp;
+      // H.264 baseline profile 우선
+      sdp = sdp.replace(/profile-level-id=[0-9a-f]+/g, 'profile-level-id=42e01f');
+      answer.sdp = sdp;
+
+      await peerConnection.setLocalDescription(answer);
+      console.log('✅ Local Description 설정 완료');
+
+      // Answer 전송
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'answer',
+          answer: answer
+        }));
+        console.log('📤 Answer 전송 완료');
+      } else {
+        console.error('❌ WebSocket이 열려있지 않습니다:', ws.readyState);
+      }
+    }
+
+    // 통계 모니터링
+    function startStatsMonitoring() {
+      if (statsInterval) {
+        clearInterval(statsInterval);
+      }
+
+      statsInterval = setInterval(async () => {
+        if (!peerConnection) return;
+
+        const stats = await peerConnection.getStats();
+        let videoStats = {};
+
+        stats.forEach(report => {
+          if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+            videoStats = report;
+
+            // 비트레이트
+            if (report.bytesReceived) {
+              const bitrate = Math.round(report.bytesReceived * 8 / 1000);
+              document.getElementById('bitrate').textContent = bitrate + 'k';
+            }
+
+            // FPS
+            if (report.framesPerSecond) {
+              document.getElementById('fps').textContent = Math.round(report.framesPerSecond);
+            }
+
+            // 해상도
+            if (report.frameWidth && report.frameHeight) {
+              document.getElementById('resolution').textContent =
+                `${report.frameWidth}x${report.frameHeight}`;
+            }
+
+            // 패킷 손실
+            if (report.packetsLost !== undefined && report.packetsReceived) {
+              const total = report.packetsLost + report.packetsReceived;
+              const loss = (report.packetsLost / total * 100).toFixed(1);
+              document.getElementById('packetLoss').textContent = loss + '%';
+            }
+
+            // Jitter (지연 변동)
+            if (report.jitter) {
+              const jitterMs = Math.round(report.jitter * 1000);
+              latencyDiv.textContent = jitterMs + ' ms';
+
+              // 색상 변경
+              latencyDiv.className = 'latency-indicator';
+              if (jitterMs > 100) {
+                latencyDiv.classList.add('critical');
+              } else if (jitterMs > 50) {
+                latencyDiv.classList.add('high');
+              }
+            }
+          }
+        });
+      }, 1000);
+    }
+
+    // 상태 업데이트
+    function updateStatus(state, message) {
+      statusDiv.className = `status-card ${state}`;
+      statusDiv.textContent = message;
+    }
+
+    // 전체화면
+    fullscreenBtn.onclick = () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+        fullscreenBtn.textContent = '전체화면';
+      } else {
+        document.documentElement.requestFullscreen();
+        fullscreenBtn.textContent = '전체화면 종료';
+      }
+    };
+
+    // 재연결
+    reconnectBtn.onclick = () => {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
+      if (ws) {
+        ws.close();
+      }
+
+      loadingDiv.style.display = 'block';
+      updateStatus('disconnected', '재연결 중...');
+
+      setTimeout(connectWebSocket, 500);
+    };
+
+    // 비디오 재생 시작시 로딩 숨김
+    remoteVideo.onplaying = () => {
+      loadingDiv.style.display = 'none';
+    };
+
+    // 초기화
+    connectWebSocket();
+  </script>
+</body>
+</html>
