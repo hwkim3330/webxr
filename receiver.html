@@ -501,10 +501,11 @@
             }
           }
 
-          // Codec info
-          if (report.type === 'codec' && codecId && report.id === codecId) {
-            const codecEl = document.getElementById('codec');
-            if (report.mimeType) {
+          // Codec info - check all codec reports
+          if (report.type === 'codec' && report.mimeType && report.mimeType.startsWith('video/')) {
+            // Only update if this is the codec being used (matches codecId)
+            if (!codecId || report.id === codecId) {
+              const codecEl = document.getElementById('codec');
               // mimeType format: "video/H264" or "video/VP8"
               let codecName = report.mimeType.split('/')[1];
 
