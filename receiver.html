@@ -427,6 +427,17 @@
           loadingOverlay.classList.remove('hidden');
           liveBadge.style.display = 'none';
           statsDisplay.style.display = 'none';
+
+          // Clear stats
+          if (statsInterval) {
+            clearInterval(statsInterval);
+            statsInterval = null;
+          }
+          document.getElementById('codec').textContent = '-';
+          document.getElementById('resolution').textContent = '-';
+          document.getElementById('fps').textContent = '0';
+          document.getElementById('bitrate').textContent = '0';
+          document.getElementById('latency').textContent = '0';
         }
       };
 

@@ -429,6 +429,9 @@
             <option value="640x480">SD - 480p (640×480)</option>
             <option value="1280x720" selected>HD - 720p (1280×720)</option>
             <option value="1920x1080">Full HD - 1080p (1920×1080)</option>
+            <option value="2560x1440">QHD - 1440p (2560×1440)</option>
+            <option value="3840x2160">4K UHD - 2160p (3840×2160)</option>
+            <option value="7680x4320">8K UHD - 4320p (7680×4320)</option>
           </select>
         </div>
 
@@ -445,10 +448,15 @@
         <div class="setting-item">
           <label class="setting-label">Bitrate</label>
           <select id="bitrateSelect">
-            <option value="1000000">1 Mbps (Low)</option>
-            <option value="2000000">2 Mbps (Medium)</option>
-            <option value="2500000" selected>2.5 Mbps (High)</option>
-            <option value="5000000">5 Mbps (Ultra)</option>
+            <option value="1000000">1 Mbps (Low - 480p)</option>
+            <option value="2000000">2 Mbps (Medium - 720p)</option>
+            <option value="2500000" selected>2.5 Mbps (High - 720p)</option>
+            <option value="5000000">5 Mbps (Ultra - 1080p)</option>
+            <option value="8000000">8 Mbps (QHD - 1440p)</option>
+            <option value="15000000">15 Mbps (4K 30fps)</option>
+            <option value="20000000">20 Mbps (4K 60fps)</option>
+            <option value="35000000">35 Mbps (8K 30fps)</option>
+            <option value="50000000">50 Mbps (8K 60fps)</option>
           </select>
         </div>
       </div>
@@ -683,10 +691,21 @@
       peerConnections.forEach(pc => pc.close());
       peerConnections.clear();
 
+      if (window.statsMonitoringInterval) {
+        clearInterval(window.statsMonitoringInterval);
+        window.statsMonitoringInterval = null;
+      }
+
       videoOverlay.classList.add('show');
       startBtn.disabled = false;
       stopBtn.disabled = true;
       document.getElementById('viewerCount').textContent = '0';
+
+      // Reset stats
+      document.getElementById('bitrate').textContent = '0 kbps';
+      document.getElementById('fps').textContent = '0';
+      document.getElementById('rtt').textContent = '0 ms';
+      document.getElementById('packetLoss').textContent = '0%';
 
       updateStatus('connected', 'Stopped');
     };
