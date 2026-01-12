@@ -6,7 +6,7 @@ Ultra low-latency WebRTC video streaming platform for real-time broadcasting ove
 
 - ⚡ **Sub-second Latency** - Direct P2P WebRTC connection (< 100ms)
 - 👥 **1:N Broadcasting** - One sender, multiple receivers simultaneously
-- 🎥 **High Quality** - Support for up to 4K@60fps streaming
+- 🎥 **High Quality** - Support for up to 8K@60fps streaming
 - 📊 **Real-time Stats** - Live codec, FPS, bitrate, and latency monitoring
 - 🌐 **Local Network** - Optimized for internal network (사내망) deployment
 - ⚙️ **Customizable** - Adjustable resolution, FPS, and bitrate settings
@@ -60,14 +60,55 @@ WebXR 1:N Broadcasting Server
 ### System Overview
 
 ```
-┌─────────────┐                 ┌─────────────┐                 ┌─────────────┐
-│   Sender    │◄───WebSocket───►│   Server    │◄───WebSocket───►│  Receiver   │
-│  (Browser)  │                 │  (Node.js)  │                 │  (Browser)  │
-└─────────────┘                 └─────────────┘                 └─────────────┘
-       │                               │                               │
-       │          WebRTC P2P           │                               │
-       └───────────────────────────────────────────────────────────────┘
+                            WebSocket Signaling
+                    ┌──────────────────────────────┐
+                    │                              │
+                    ▼                              ▼
+┌─────────────────────────┐              ┌──────────────────────┐
+│      Sender             │              │   Receiver 0         │
+│   (sender.html)         │              │ (receiver.html)      │
+│                         │              │                      │
+│  ┌──────────────────┐   │              │  ┌───────────────┐  │
+│  │ Local Camera     │   │              │  │ Video Player  │  │
+│  │ getUserMedia()   │   │              │  │ <video>       │  │
+│  └──────────────────┘   │              │  └───────────────┘  │
+│           │             │              │         ▲            │
+│           ▼             │              │         │            │
+│  ┌──────────────────┐   │              │  ┌───────────────┐  │
+│  │ PeerConnection   │───┼──WebRTC P2P──┼─►│ PeerConn #0   │  │
+│  │   Map[0]         │   │   (direct)   │  │               │  │
+│  └──────────────────┘   │              │  └───────────────┘  │
+│           │             │              └──────────────────────┘
+│           ▼             │
+│  ┌──────────────────┐   │              ┌──────────────────────┐
+│  │ PeerConnection   │───┼──WebRTC P2P──┼─►│  Receiver 1       │
+│  │   Map[1]         │   │   (direct)   │  │  PeerConn #1      │
+│  └──────────────────┘   │              └──────────────────────┘
+│           │             │
+│           ▼             │              ┌──────────────────────┐
+│  ┌──────────────────┐   │              │  Receiver N...       │
+│  │ PeerConnection   │───┼──WebRTC P2P──┼─►│  PeerConn #N      │
+│  │   Map[N]         │   │   (direct)   │  └──────────────────┘
+│  └──────────────────┘   │
+└─────────────────────────┘
+            │
+            ▼
+   ┌────────────────┐
+   │  WebSocket     │
+   │  Signaling     │◄──────────────────── All receivers
+   │  Server        │
+   │  (server.js)   │
+   │                │
+   │ Map<receiverId,│
+   │     ws>        │
+   └────────────────┘
 ```
+
+**Key Architecture Points:**
+- **Sender maintains Map<receiverId, RTCPeerConnection>** - One dedicated P2P connection per receiver
+- **Server assigns unique receiverId** to each receiver (0, 1, 2, 3...)
+- **Signaling via WebSocket**, media streams via **WebRTC P2P** (not through server)
+- **Camera-ready notification** triggers offer creation for all waiting receivers
 
 ### Components
 
@@ -83,16 +124,47 @@ WebXR 1:N Broadcasting Server
 
 **Key Logic:**
 ```javascript
-// Receiver connects → Server assigns ID → Requests offer from sender
-receiver connects → assign receiverId → send 'request-offer' to sender
+// Data Structures
+let sender = null;                        // WebSocket connection to sender
+const receivers = new Map();              // Map<receiverId, {ws, receiverId}>
+let receiverIdCounter = 0;               // Auto-increment ID
 
-// Sender camera ready → Server requests offers for all receivers
-sender 'camera-ready' → send 'request-offer' for each receiverId
+// Flow 1: Receiver connects
+1. receiver connects → assign unique receiverId (0, 1, 2...)
+2. store in receivers Map
+3. send 'receiver-id' to receiver
+4. if sender exists and camera ready → send 'request-offer' to sender for this receiverId
 
-// Signaling flow
-sender creates offer → server routes to receiver[receiverId]
-receiver creates answer → server routes to sender
-ICE candidates exchanged through server
+// Flow 2: Sender camera ready
+1. sender sends 'camera-ready' message
+2. server iterates through all receivers
+3. send 'request-offer' to sender for EACH receiverId
+
+// Flow 3: Signaling routing
+offer:   sender → server → receivers.get(receiverId).ws
+answer:  receiver → server → sender
+ice:     bidirectional routing via receiverId
+```
+
+**Complete Message Flow:**
+```
+[Receiver connects]
+Receiver → Server: WebSocket connect
+Server → Receiver: {type: 'receiver-id', receiverId: 0}
+Server → Sender: {type: 'request-offer', receiverId: 0}
+
+[Sender creates offer]
+Sender → Server: {type: 'offer', receiverId: 0, offer: {...}}
+Server → Receiver 0: {type: 'offer', offer: {...}}
+
+[Receiver creates answer]
+Receiver 0 → Server: {type: 'answer', receiverId: 0, answer: {...}}
+Server → Sender: {type: 'answer', receiverId: 0, answer: {...}}
+
+[ICE candidate exchange]
+Sender → Server: {type: 'ice-candidate', receiverId: 0, candidate: {...}}
+Server → Receiver 0: {type: 'ice-candidate', candidate: {...}}
+(bidirectional)
 ```
 
 #### 2. **Sender (sender.html)**
@@ -123,9 +195,9 @@ const peerConnections = new Map(); // Map<receiverId, RTCPeerConnection>
 10. P2P connection established → streaming starts
 
 **Settings (Configured on Sender):**
-- **Resolution**: 480p, 720p (default), 1080p, 4K
+- **Resolution**: 480p, 720p (default), 1080p, 1440p (QHD), 4K UHD, 8K UHD
 - **Frame Rate**: 15, 24, 30 (default), 60 fps
-- **Bitrate**: 1-5 Mbps
+- **Bitrate**: 1-50 Mbps (1 Mbps for 480p, up to 50 Mbps for 8K@60fps)
 
 **Important Note:** These settings are applied at the sender's `getUserMedia()` and peer connection configuration. Receivers automatically receive the stream with these settings.
 
@@ -152,11 +224,11 @@ const peerConnections = new Map(); // Map<receiverId, RTCPeerConnection>
 10. `ontrack` event fires → display video
 
 **Statistics Displayed:**
-- Codec (H264, VP8, VP9)
-- Resolution (e.g., 1280x720)
-- FPS (frames per second)
-- Bitrate (kbps)
-- Latency (round-trip time in ms)
+- **Codec**: H.264 (AVC), VP8, VP9, AV1 (browser-supported codecs only, NO H.265/HEVC)
+- **Resolution**: e.g., 1280x720, 3840x2160
+- **FPS**: frames per second
+- **Bitrate**: kbps (calculated from bytesReceived delta)
+- **Latency**: round-trip time in ms (from RTCStatsReport)
 
 ## 🔧 Technical Details
 
@@ -329,12 +401,16 @@ const server = https.createServer(options, app);
 
 ### Optimal Settings by Use Case
 
-| Use Case | Resolution | FPS | Bitrate | Viewers |
-|----------|-----------|-----|---------|---------|
-| **Low Bandwidth** | 480p | 15 | 1 Mbps | 1-3 |
-| **Balanced** (Default) | 720p | 30 | 2.5 Mbps | 1-5 |
-| **High Quality** | 1080p | 30 | 3-4 Mbps | 1-3 |
-| **Smooth Motion** | 720p | 60 | 4-5 Mbps | 1-2 |
+| Use Case | Resolution | FPS | Bitrate | Viewers | Sender Upload |
+|----------|-----------|-----|---------|---------|---------------|
+| **Low Bandwidth** | 480p | 15 | 1 Mbps | 1-3 | 3 Mbps |
+| **Balanced** (Default) | 720p | 30 | 2.5 Mbps | 1-5 | 12.5 Mbps |
+| **High Quality** | 1080p | 30 | 5 Mbps | 1-3 | 15 Mbps |
+| **Smooth Motion** | 720p | 60 | 4 Mbps | 1-2 | 8 Mbps |
+| **4K Streaming** | 4K UHD | 30 | 15 Mbps | 1-2 | 30 Mbps |
+| **4K High FPS** | 4K UHD | 60 | 20 Mbps | 1 | 20 Mbps |
+| **8K Streaming** | 8K UHD | 30 | 35 Mbps | 1 | 35 Mbps |
+| **8K High FPS** | 8K UHD | 60 | 50 Mbps | 1 | 50 Mbps |
 
 ### Bandwidth Calculation
 
@@ -350,15 +426,263 @@ Download = Bitrate
 Example: 2.5 Mbps stream = 2.5 Mbps download needed
 ```
 
+## 🌐 360° Video Support & LTE Broadcasting
+
+### Current Architecture Feasibility
+
+**Can the current structure support 360° video over LTE?**
+
+**YES**, with important considerations:
+
+#### 1. 360° Video Support - **Already Compatible**
+
+The current WebRTC P2P architecture **fully supports 360° video** with minimal changes:
+
+**Why it works:**
+- 360° video is just a standard 2D video stream with equirectangular projection
+- The sender captures 360° camera (equirectangular format) via `getUserMedia()`
+- WebRTC streams it exactly like any other video (H.264/VP8/VP9 codec)
+- **Only the receiver needs modification** - replace `<video>` with 360° player
+
+**Required Changes:**
+
+```javascript
+// SENDER SIDE - NO CHANGES NEEDED
+// 360° camera outputs standard video stream, WebRTC handles it normally
+
+// RECEIVER SIDE - Add 360° player
+// Option 1: Three.js
+import * as THREE from 'three';
+
+const video = document.querySelector('video');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+// Create sphere with video texture
+const geometry = new THREE.SphereGeometry(500, 60, 40);
+geometry.scale(-1, 1, 1); // Invert sphere to view from inside
+const texture = new THREE.VideoTexture(video);
+const material = new THREE.MeshBasicMaterial({ map: texture });
+const sphere = new THREE.Mesh(geometry, material);
+scene.add(sphere);
+
+// Add VR controls (OrbitControls or DeviceOrientationControls)
+
+// Option 2: A-Frame (simpler)
+<a-scene>
+  <a-videosphere src="#video-stream" rotation="0 -90 0"></a-videosphere>
+  <a-camera></a-camera>
+</a-scene>
+```
+
+**Summary:**
+- ✅ Current architecture supports 360° video transmission
+- ✅ No server or sender changes required
+- ✅ Only receiver needs 360° player (Three.js/A-Frame)
+
+#### 2. LTE Broadcasting - **Feasible with Bandwidth Considerations**
+
+**Can a sender broadcast 360° video over LTE?**
+
+**YES**, but LTE upload bandwidth is the critical constraint.
+
+**LTE Upload Speeds:**
+| LTE Type | Typical Upload | Max Upload | Realistic for Streaming |
+|----------|---------------|------------|------------------------|
+| **LTE Cat 4** | 10-30 Mbps | 50 Mbps | 720p @ 2.5 Mbps × 2-4 viewers |
+| **LTE Cat 6** | 20-40 Mbps | 50 Mbps | 1080p @ 5 Mbps × 2-4 viewers |
+| **LTE-A (Advanced)** | 30-60 Mbps | 150 Mbps | 4K @ 15 Mbps × 2-3 viewers |
+| **5G Sub-6** | 50-150 Mbps | 300 Mbps | 4K @ 15 Mbps × 5-10 viewers |
+| **5G mmWave** | 200-500 Mbps | 1+ Gbps | 8K @ 50 Mbps × 5+ viewers |
+
+**Bandwidth Formula:**
+```
+Required Upload = Bitrate × Number of Simultaneous Receivers
+
+Example 1: 360° video at 1080p 30fps, 5 Mbps bitrate
+- 1 viewer:  5 Mbps  ✅ Works on LTE Cat 4+
+- 3 viewers: 15 Mbps ✅ Works on LTE Cat 4+
+- 5 viewers: 25 Mbps ✅ Works on LTE Cat 6+
+- 10 viewers: 50 Mbps ❌ Requires LTE-A or 5G
+
+Example 2: 360° video at 4K 30fps, 15 Mbps bitrate
+- 1 viewer:  15 Mbps ✅ Works on LTE Cat 6+
+- 2 viewers: 30 Mbps ✅ Works on LTE-A or 5G
+- 3 viewers: 45 Mbps ⚠️ Requires stable LTE-A or 5G
+```
+
+**Recommended Settings for LTE Sender:**
+
+| Scenario | Resolution | FPS | Bitrate | Max Viewers | Min LTE Required |
+|----------|-----------|-----|---------|-------------|------------------|
+| **Conservative** | 720p | 30 | 2 Mbps | 5 | LTE Cat 4 (10 Mbps) |
+| **Balanced** | 1080p | 30 | 4 Mbps | 3 | LTE Cat 6 (20 Mbps) |
+| **High Quality** | 1080p | 30 | 5 Mbps | 4 | LTE-A (30 Mbps) |
+| **4K Limited** | 4K | 30 | 12 Mbps | 2 | LTE-A (30 Mbps) |
+| **4K Extended** | 4K | 30 | 15 Mbps | 3 | 5G (50+ Mbps) |
+
+#### 3. Architectural Limitations for LTE
+
+**Current P2P Architecture Issues:**
+
+⚠️ **Problem 1: Upload Bandwidth Multiplication**
+```
+With current P2P:
+Sender upload = Bitrate × Receiver count
+
+Example: 5 Mbps stream × 10 viewers = 50 Mbps upload needed
+```
+
+This is **NOT scalable** for many viewers over LTE.
+
+⚠️ **Problem 2: Unstable LTE Connection**
+- LTE upload speed fluctuates (moving vehicle, cell tower handoffs)
+- P2P connections may drop and require renegotiation
+- No automatic bitrate adaptation per receiver
+
+**Solution: SFU (Selective Forwarding Unit) Architecture**
+
+For LTE broadcasting to **10+ viewers**, migrate to SFU:
+
+```
+Current (P2P):                    Recommended (SFU):
+
+Sender ──┬─► Receiver 1          Sender ───► SFU Server ──┬─► Receiver 1
+         ├─► Receiver 2                                    ├─► Receiver 2
+         ├─► Receiver 3                                    ├─► Receiver 3
+         └─► Receiver N                                    └─► Receiver N
+
+Upload = N × Bitrate              Upload = 1 × Bitrate
+```
+
+**SFU Benefits:**
+- ✅ Sender only uploads **once** to SFU (constant bandwidth regardless of viewers)
+- ✅ SFU handles distribution to N receivers
+- ✅ Adaptive bitrate per receiver (simulcast)
+- ✅ Better handling of unstable LTE connections
+- ⚠️ Requires media server (Mediasoup, Janus, LiveKit)
+- ⚠️ Adds latency (~100-300ms more than P2P)
+
+#### 4. Implementation Roadmap
+
+**Phase 1: 360° Video Support (Current Architecture)** ✅ Feasible Now
+- Modify [receiver.html](receiver.html) to use Three.js or A-Frame
+- Add 360° video player with gyroscope/mouse controls
+- Test with 360° camera (Ricoh Theta, Insta360, etc.)
+- No server or sender changes needed
+
+**Phase 2: LTE Broadcasting (P2P, 1-5 viewers)** ✅ Feasible Now
+- Current architecture works for small viewer counts
+- Test with LTE/5G mobile hotspot
+- Add bandwidth monitoring and warnings
+- Implement fallback quality settings
+
+**Phase 3: Scalable LTE Broadcasting (SFU, 10+ viewers)** 🔄 Requires Refactor
+- Migrate to SFU architecture (Mediasoup recommended)
+- Sender uploads single stream to SFU
+- SFU handles distribution and adaptive bitrate
+- Implement simulcast (multiple quality tiers)
+
+**Phase 4: Advanced Features** 🔮 Future
+- Adaptive bitrate based on network conditions
+- Automatic quality switching for LTE fluctuations
+- Recording 360° streams server-side
+- Multi-camera 360° streaming
+- Spatial audio for 360° video
+
+### Recommended Stack for 360° + LTE
+
+```javascript
+// Sender (no changes)
+Current sender.html + 360° camera
+
+// Receiver (add 360° player)
+receiver.html + Three.js or A-Frame
+
+// For > 5 viewers, use SFU:
+Mediasoup (recommended) or Janus Gateway
++ Load balancing for 100+ viewers
+```
+
+### Code Example: Adding 360° to Current System
+
+**Step 1: Modify receiver.html**
+```html
+<!-- Add Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/controls/OrbitControls.js"></script>
+
+<!-- Replace video display with canvas -->
+<canvas id="threejs-canvas"></canvas>
+
+<script>
+// Create scene
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('threejs-canvas') });
+
+// Create sphere for 360° video
+const geometry = new THREE.SphereGeometry(500, 60, 40);
+geometry.scale(-1, 1, 1);
+
+// When video track received
+peerConnection.ontrack = (event) => {
+  const video = document.createElement('video');
+  video.srcObject = new MediaStream([event.track]);
+  video.play();
+
+  const texture = new THREE.VideoTexture(video);
+  const material = new THREE.MeshBasicMaterial({ map: texture });
+  const sphere = new THREE.Mesh(geometry, material);
+  scene.add(sphere);
+};
+
+// Add controls (mouse drag to look around)
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+```
+
+**Step 2: Test with 360° camera**
+- Use 360° camera that outputs equirectangular video
+- Or use OBS with 360° video file as virtual camera
+- No sender.html changes needed
+
+### LTE Testing Checklist
+
+- [ ] Test with LTE/5G mobile hotspot
+- [ ] Measure actual upload speed: `speedtest.net`
+- [ ] Monitor connection quality in sender stats
+- [ ] Test with 1, 2, 3, 5 viewers simultaneously
+- [ ] Test moving sender (vehicle, walking) for handoff behavior
+- [ ] Implement bandwidth warnings when upload < required
+- [ ] Test fallback to lower bitrate on poor connection
+
 ## 🔮 Future Enhancements
 
-- [ ] 360° video support (Three.js / A-Frame)
+### Short-term (Compatible with Current Architecture)
+- [x] 8K resolution support (✅ implemented)
+- [ ] 360° video player (Three.js / A-Frame) - receiver-side only
 - [ ] Screen sharing option
 - [ ] Recording functionality
 - [ ] Chat overlay
-- [ ] SFU architecture for scalability (>10 viewers)
-- [ ] Adaptive bitrate streaming
-- [ ] Mobile app (React Native)
+- [ ] Bandwidth monitoring and adaptive quality warnings
+
+### Long-term (Requires Architecture Changes)
+- [ ] SFU architecture for scalability (>10 viewers over LTE)
+- [ ] Adaptive bitrate streaming (simulcast)
+- [ ] Automatic quality switching based on network conditions
+- [ ] Mobile app (React Native) with native 360° support
+- [ ] Multi-camera synchronized 360° streaming
+- [ ] Spatial audio for immersive 360° experience
+- [ ] Server-side 360° stream recording
 
 ## 📝 FAQ
 
