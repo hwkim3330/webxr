@@ -65,43 +65,64 @@ WebXR 1:N Broadcasting Server
   수신자: http://192.168.x.x:3000/receiver.html
 ```
 
-### Method 3: Desktop App (Electron)
+### Method 3: Desktop App (Electron) - **All-in-One Solution**
 
-**For easier deployment**, use the Electron sender app:
+**🎯 Recommended for easiest deployment!**
 
+The Electron app includes **both server and sender** in a single executable:
+
+#### Download & Run
+1. Download from [Releases](https://github.com/hwkim3330/webxr/releases)
+   - Windows: `WebXR-Stream-Sender-Setup-1.0.0.exe`
+   - macOS: `WebXR-Stream-Sender-1.0.0.dmg`
+   - Linux: `WebXR-Stream-Sender-1.0.0.AppImage`
+2. Install and launch
+3. **Server automatically starts** on port 3000
+4. Sender interface opens ready to broadcast
+5. Share receiver URL with viewers: `http://[your-ip]:3000/receiver.html`
+
+#### Development
 ```bash
 cd sender-app
-npm install
-npm start           # Run in development
-npm run build:win   # Build Windows installer
-npm run build:mac   # Build macOS app
-npm run build:linux # Build Linux AppImage
+npm install          # Also installs server dependencies
+npm start            # Runs app with integrated server
+npm run build:win    # Build Windows installer
+npm run build:mac    # Build macOS app
+npm run build:linux  # Build Linux AppImage
 ```
 
 **Benefits of Desktop App:**
-- No browser camera permission issues
-- Easier distribution
-- Auto-updates support
-- System tray integration
-- Standalone executable
+- ⚡ **Integrated server** - No separate server setup needed!
+- 🎥 No browser camera permission issues (HTTPS not required)
+- 📦 Single executable for easy distribution
+- 🔄 Server automatically starts/stops with app
+- 🖥️ Standalone - works without external dependencies
+
+**How it works:**
+- App starts → Server launches on port 3000
+- Sender UI connects to localhost:3000
+- Viewers connect to `http://[sender-ip]:3000/receiver.html`
+- App closes → Server stops automatically
 
 ### Usage
 
-#### Web-based Broadcaster (Sender)
-1. Open `http://localhost:3000/sender.html`
-2. Adjust settings (Resolution, FPS, Bitrate)
-3. Click **"🎥 Start Broadcasting"**
-4. Allow camera permissions
-5. Stream starts automatically to all connected viewers
-
-#### Desktop App Broadcaster
+#### Option A: Desktop App (Integrated - Recommended)
 1. Download and install WebXR Stream Sender from [Releases](https://github.com/hwkim3330/webxr/releases)
-2. Launch the app
-3. Configure server address (default: ws://localhost:3000)
-4. Start broadcasting
+2. Launch the app (server starts automatically)
+3. Adjust settings (Resolution, FPS, Bitrate)
+4. Click **"🎥 Start Broadcasting"**
+5. Share receiver URL with viewers: `http://[your-ip]:3000/receiver.html`
 
-#### Viewer (Receiver)
-1. Open `http://localhost:3000/receiver.html`
+#### Option B: Web-based Broadcaster (Manual Setup)
+1. Start server (see Method 1 or 2 above)
+2. Open `http://localhost:3000/sender.html` in browser
+3. Adjust settings (Resolution, FPS, Bitrate)
+4. Click **"🎥 Start Broadcasting"**
+5. Allow camera permissions
+6. Stream starts automatically to all connected viewers
+
+#### Viewer (Receiver) - Same for both options
+1. Open `http://[sender-ip]:3000/receiver.html` in browser
 2. Video will auto-play when broadcaster starts
 3. View real-time stats: codec, resolution, FPS, bitrate, latency
 

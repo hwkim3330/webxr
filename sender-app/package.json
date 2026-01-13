@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "postinstall": "cd server && npm install",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -21,21 +22,22 @@
       "main.js",
       "preload.js",
       "renderer.html",
-      "assets/**/*"
+      "assets/**/*",
+      "server/**/*"
+    ],
+    "asarUnpack": [
+      "server/**/*"
     ],
     "win": {
-      "target": ["nsis", "portable"],
-      "icon": "assets/icon.ico"
+      "target": ["nsis", "portable"]
     },
     "mac": {
       "target": ["dmg", "zip"],
-      "category": "public.app-category.video",
-      "icon": "assets/icon.icns"
+      "category": "public.app-category.video"
     },
     "linux": {
       "target": ["AppImage", "deb"],
-      "category": "Video",
-      "icon": "assets/icon.png"
+      "category": "Video"
     },
     "nsis": {
       "oneClick": false,
