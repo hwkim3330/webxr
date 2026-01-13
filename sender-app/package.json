@@ -29,7 +29,7 @@
       "server/**/*"
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["portable"]
     },
     "mac": {
       "target": ["dmg", "zip"],
