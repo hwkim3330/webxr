@@ -1,19 +1,24 @@
 {
-  "name": "webxr-lowlatency-stream",
+  "name": "webxr-stream",
   "version": "1.0.0",
-  "description": "Low-latency WebRTC streaming for internal networks with Intel Quick Sync optimization",
+  "description": "Ultra low-latency WebRTC 1:N broadcasting platform with 360° video support",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "start:cloud": "node server-cloud.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop webxr-stream",
+    "pm2:restart": "pm2 restart webxr-stream",
+    "pm2:logs": "pm2 logs webxr-stream",
+    "pm2:monit": "pm2 monit"
   },
   "keywords": [
     "webrtc",
     "streaming",
     "low-latency",
-    "intel-quick-sync",
-    "internal-network"
+    "1:n-broadcasting",
+    "360-video",
+    "p2p"
   ],
   "author": "Kim Hyunwoo",
   "license": "MIT",
@@ -23,6 +28,7 @@
     "cors": "^2.8.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "pm2": "^5.3.0"
   }
 }

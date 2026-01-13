@@ -14,16 +14,40 @@ Ultra low-latency WebRTC video streaming platform for real-time broadcasting ove
 
 ## 🚀 Quick Start
 
-### Installation
+### Method 1: Easy Start (Recommended)
 
+#### Windows
+Double-click `start-server.bat`
+
+#### Mac/Linux
+```bash
+./start-server.sh
+```
+
+The server will:
+- Auto-install dependencies if needed
+- Display available URLs
+- Start the WebSocket server on port 3000
+
+### Method 2: Manual Start
+
+#### Installation
 ```bash
 npm install
 ```
 
-### Start Server
-
+#### Start Server
 ```bash
-node server.js
+# Simple start
+npm start
+
+# Development mode (auto-restart on changes)
+npm run dev
+
+# Production mode with PM2 (stable, auto-restart)
+npm run pm2:start
+npm run pm2:logs    # View logs
+npm run pm2:stop    # Stop server
 ```
 
 The server will display available URLs:
@@ -37,18 +61,44 @@ WebXR 1:N Broadcasting Server
 수신자: http://localhost:3000/receiver.html
 
 내부망 접속 주소:
-  송신자: http://172.31.51.96:3000/sender.html
-  수신자: http://172.31.51.96:3000/receiver.html
+  송신자: http://192.168.x.x:3000/sender.html
+  수신자: http://192.168.x.x:3000/receiver.html
 ```
+
+### Method 3: Desktop App (Electron)
+
+**For easier deployment**, use the Electron sender app:
+
+```bash
+cd sender-app
+npm install
+npm start           # Run in development
+npm run build:win   # Build Windows installer
+npm run build:mac   # Build macOS app
+npm run build:linux # Build Linux AppImage
+```
+
+**Benefits of Desktop App:**
+- No browser camera permission issues
+- Easier distribution
+- Auto-updates support
+- System tray integration
+- Standalone executable
 
 ### Usage
 
-#### Broadcaster (Sender)
+#### Web-based Broadcaster (Sender)
 1. Open `http://localhost:3000/sender.html`
 2. Adjust settings (Resolution, FPS, Bitrate)
 3. Click **"🎥 Start Broadcasting"**
 4. Allow camera permissions
 5. Stream starts automatically to all connected viewers
+
+#### Desktop App Broadcaster
+1. Download and install WebXR Stream Sender from [Releases](https://github.com/hwkim3330/webxr/releases)
+2. Launch the app
+3. Configure server address (default: ws://localhost:3000)
+4. Start broadcasting
 
 #### Viewer (Receiver)
 1. Open `http://localhost:3000/receiver.html`
@@ -314,14 +364,41 @@ For local network (사내망) deployment with limited viewers, P2P provides the 
 
 ```
 webxr-stream/
-├── server.js           # WebSocket signaling server
-├── sender.html         # Broadcaster interface
-├── receiver.html       # Viewer interface
-├── index.html          # Landing page
-├── package.json        # Dependencies
-├── .gitignore         # Git ignore rules
-└── README.md          # This file
+├── server.js              # WebSocket signaling server
+├── sender.html            # Web-based broadcaster interface
+├── receiver.html          # Viewer interface
+├── index.html             # Landing page
+├── package.json           # Server dependencies
+├── ecosystem.config.js    # PM2 configuration for production
+├── start-server.bat       # Windows server launcher
+├── start-server.sh        # Mac/Linux server launcher
+├── .gitignore            # Git ignore rules
+├── README.md             # This file (documentation)
+│
+├── sender-app/           # 📱 Electron Desktop App (Sender)
+│   ├── main.js           # Electron main process
+│   ├── preload.js        # Preload script (context bridge)
+│   ├── renderer.html     # App UI (based on sender.html)
+│   ├── package.json      # Electron app dependencies
+│   └── assets/           # App icons and resources
+│       ├── icon.ico      # Windows icon
+│       ├── icon.icns     # macOS icon
+│       └── icon.png      # Linux icon
+│
+└── logs/                 # Server logs (auto-created by PM2)
+    ├── out.log           # stdout logs
+    ├── err.log           # stderr logs
+    └── combined.log      # combined logs
 ```
+
+**Key Files:**
+
+- **server.js**: Core WebSocket signaling server
+- **sender.html**: Web browser-based broadcaster (requires HTTPS for camera on IP addresses)
+- **receiver.html**: Lightweight viewer page
+- **sender-app/**: Electron desktop app for easier sender deployment (no HTTPS issues)
+- **start-server.bat/.sh**: One-click server startup scripts
+- **ecosystem.config.js**: Production deployment config for PM2 process manager
 
 ## 🌐 Network Setup
 

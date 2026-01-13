@@ -1,0 +1,59 @@
+{
+  "name": "webxr-stream-sender",
+  "version": "1.0.0",
+  "description": "WebXR Stream Sender - Desktop broadcasting application",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder -mwl"
+  },
+  "build": {
+    "appId": "com.webxr.stream.sender",
+    "productName": "WebXR Stream Sender",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.html",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.video",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Video",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "keywords": [
+    "webrtc",
+    "streaming",
+    "broadcasting",
+    "electron"
+  ],
+  "author": "Kim Hyunwoo",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}
